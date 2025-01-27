@@ -1,5 +1,4 @@
 import { COLORS, ASSET_KEYS, CARD_DIMENSIONS } from '../config/constants.js';
-import { Card } from '../entities/Card.js';
 import { Deck } from '../entities/Deck.js';
 import { Hand } from '../entities/Hand.js';
 import { Tile } from '../entities/Tile.js';
