@@ -43,6 +43,8 @@
     
     <script>
     class MainScene extends Phaser.Scene {
+        selectedCard = null;
+
         preload() {
             // Load card textures for both decks
             this.load.image('number-card', 'assets/number-card-back.jpeg');
@@ -162,13 +164,23 @@
                 
                 const tile = this.add.image(pos.x + (tileSize/2), pos.y + (tileSize/2), cupColor)
                     .setDisplaySize(tileSize, tileSize)
-                    .setOrigin(0.5, 0.5);  // Center the tile on its position
+                    .setOrigin(0.5, 0.5)
+                    .setInteractive();  // Make tile interactive
                 
-                // Add click/tap interaction
-                tile.setInteractive();
+                // All cups are now playable
+                tile.setData('hasCup', true);
+                tile.setData('score', 0); // Initialize score
+
+                // Modify interaction handler
                 tile.on('pointerdown', () => {
-                    if (hasCup) {
-                        tile.setTint(Phaser.Display.Color.GetRandom(0, 255, 255));
+                    if (this.selectedCard) {
+                        // Make sure the card is a number card and the tile doesn't already have a number
+                        if (this.selectedCard.getData('type') === 'number' && !tile.getData('hasNumber')) {
+                            this.applyCardToTile(this.selectedCard, tile);
+                            // Clear selection after applying
+                            this.selectedCard.clearTint();
+                            this.selectedCard = null;
+                        }
                     }
                 });
             });
@@ -250,15 +262,15 @@
             
             if (deckType === 'number') {
                 const numberColors = {
-                    1: 0x800080,
-                    2: 0xFF0000,
-                    3: 0x008000,
-                    4: 0x8B4513,
-                    5: 0x8B4513
+                    1: { hex: 0x800080, cup: 'cup-purple' },  // Purple
+                    2: { hex: 0xFF0000, cup: 'cup-red' },     // Red
+                    3: { hex: 0x008000, cup: 'cup-green' },   // Green
+                    4: { hex: 0x8B4513, cup: 'cup-brown' },   // Brown
+                    5: { hex: 0x8B4513, cup: 'cup-brown' }    // Brown
                 };
 
                 const cardFront = this.make.graphics();
-                cardFront.fillStyle(numberColors[cardValue] || 0x000000, 1);
+                cardFront.fillStyle(numberColors[cardValue].hex || 0x000000, 1);
                 cardFront.fillRect(0, 0, 100, 140);
                 cardFront.lineStyle(2, 0x000000);
                 cardFront.strokeRect(0, 0, 100, 140);
@@ -280,6 +292,9 @@
                 .setOrigin(0.5)
                 .setVisible(false)
                 .setDepth(2); // Text always on top
+
+                // Store the cup color this card matches with
+                cardFrontSprite.setData('matchingCup', numberColors[cardValue].cup);
 
                 this.tweens.add({
                     targets: card,
@@ -344,6 +359,18 @@
         addCardClickInteraction(card, deckType, cardValue) {
             card.on('pointerup', (pointer) => {
                 if (pointer.getDistance() < 5) {
+                    if (deckType === 'number') {
+                        // Toggle card selection
+                        if (this.selectedCard === card) {
+                            // Deselect
+                            this.selectedCard = null;
+                            card.clearTint();
+                        } else {
+                            // Select for placement
+                            this.selectedCard = card;
+                            card.setTint(0x00ff00); // Green tint indicates selection
+                        }
+                    }
                     const cardIndex = this.handCards.indexOf(card);
                     if (cardIndex > -1) {
                         // Bring to front by moving to end of array AND updating depth
@@ -463,6 +490,98 @@
             return this.children.list.find(child => {
                 return child.getBounds().contains(x, y) && child.texture.key === 'cup-tile';
             });
+        }
+
+        applyCardToTile(card, tile) {
+            // Get card value correctly (handle both number and assist cards)
+            const cardValue = parseInt(card.getData('value'));
+            if (isNaN(cardValue)) return; // Only proceed with valid numbers
+
+            // Get the tile's texture key (cup color)
+            const cupColor = tile.texture.key;
+            
+            // Calculate score based on color matching
+            let points = cardValue;
+            const cardMatchingCup = card.getData('matchingCup');
+            
+            if (cupColor === 'cup-white') {
+                // White cup always gives normal points
+                points = cardValue;
+            } else if (cardMatchingCup === cupColor) {
+                // Double points for matching colors
+                points = cardValue * 2;
+            } else {
+                // Zero points for wrong color match
+                points = 0;
+            }
+
+            // Mark the tile as having a number
+            tile.setData('hasNumber', true);
+            
+            // Remove card and its associated text from hand
+            const cardIndex = this.handCards.indexOf(card);
+            if (cardIndex > -1) {
+                this.handCards.splice(cardIndex, 1);
+                
+                // Clean up card elements
+                const cardText = card.getData('text');
+                const cardDescription = card.getData('description');
+                
+                if (cardText?.active) {
+                    cardText.destroy();
+                }
+                if (cardDescription?.active) {
+                    cardDescription.destroy();
+                }
+                if (card.active) {
+                    card.destroy();
+                }
+                
+                this.rearrangeHand();
+            }
+
+            // Update score with animation
+            const currentScore = tile.getData('score') || 0;
+            const newScore = currentScore + points;
+            tile.setData('score', newScore);
+
+            // Store original scale
+            const originalScale = tile.scale;
+            
+            // Animate score update with proper scale reset
+            this.tweens.add({
+                targets: tile,
+                scaleX: originalScale * 0.9,
+                scaleY: originalScale * 0.9,
+                duration: 100,
+                yoyo: true,
+                ease: 'Power2',
+                onComplete: () => {
+                    tile.setScale(originalScale);
+                }
+            });
+
+            // Score text handling with proper depth
+            if (!tile.getData('scoreText')) {
+                const scoreText = this.add.text(
+                    tile.x,
+                    tile.y - tile.displayHeight/2 - 10,
+                    newScore.toString(),
+                    {
+                        fontSize: '24px',
+                        color: '#000000',
+                        backgroundColor: '#ffffff',
+                        padding: { x: 5, y: 2 }
+                    }
+                )
+                .setOrigin(0.5)
+                .setDepth(1000); // Ensure text is on top
+                tile.setData('scoreText', scoreText);
+            } else {
+                tile.getData('scoreText')
+                    .setText(newScore.toString())
+                    .setDepth(1000); // Maintain depth
+            }
         }
     }
 
