@@ -39,6 +39,12 @@ export class Tile {
         this.hasNumber = true;
         this.updateScore(points);
         this.animateScoreUpdate();
+        
+        // Destroy the card after applying it
+        if (card.description) {
+            card.lower(); // This will clear the description text
+        }
+        card.destroy();
         return true;
     }
 
