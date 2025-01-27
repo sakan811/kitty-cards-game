@@ -81,14 +81,10 @@ export class Card {
 
     select() {
         if (this.type !== 'number') return;
-        const target = this.frontSprite || this.sprite;
-        target.setTint(0x00ff00);
     }
 
     deselect() {
         if (this.type !== 'number') return;
-        const target = this.frontSprite || this.sprite;
-        target.clearTint();
     }
 
     moveTo(x, y, duration = 200) {
