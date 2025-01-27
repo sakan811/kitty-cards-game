@@ -7,6 +7,8 @@ export class MainScene extends Phaser.Scene {
     constructor() {
         super({ key: 'MainScene' });
         this.selectedCard = null;
+        this.totalPoints = 0;
+        this.pointsText = null;
     }
 
     preload() {
@@ -108,6 +110,21 @@ export class MainScene extends Phaser.Scene {
         // Setup deck event handlers
         this.decks.number.visual.on('pointerdown', () => this.onDeckClick(this.decks.number));
         this.decks.assist.visual.on('pointerdown', () => this.onDeckClick(this.decks.assist));
+
+        // Add total points display
+        this.pointsText = this.add.text(
+            this.scale.width - 20,
+            20,
+            'Total Points: 0',
+            {
+                fontSize: '24px',
+                color: '#000000',
+                backgroundColor: '#ffffff',
+                padding: { x: 10, y: 5 }
+            }
+        )
+        .setOrigin(1, 0)
+        .setDepth(1000);
     }
 
     onDeckClick(deck) {
@@ -132,6 +149,10 @@ export class MainScene extends Phaser.Scene {
     onTileClick(tile) {
         if (this.selectedCard && this.selectedCard.type === 'number' && !tile.hasNumber) {
             if (tile.applyCard(this.selectedCard)) {
+                // Update total points when a card is successfully applied
+                this.totalPoints = this.tiles.reduce((sum, t) => sum + (t.score || 0), 0);
+                this.pointsText.setText(`Total Points: ${this.totalPoints}`);
+                
                 this.hand.removeCard(this.selectedCard);
                 this.selectedCard = null;
             }
