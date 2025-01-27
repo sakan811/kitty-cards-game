@@ -11,16 +11,15 @@ export const HAND_CONFIG = {
 export const COLORS = {
     cupColors: ['cup-purple', 'cup-red', 'cup-green', 'cup-brown'],
     numberColors: {
-        1: { hex: 0x800080, cup: 'cup-purple' },  // Purple
-        2: { hex: 0xFF0000, cup: 'cup-red' },     // Red
-        3: { hex: 0x008000, cup: 'cup-green' },   // Green
-        4: { hex: 0x8B4513, cup: 'cup-brown' },   // Brown
-        5: { hex: 0x8B4513, cup: 'cup-brown' }    // Brown
+        1: { hex: '0xE0B0FF', cup: 'cup-purple' },  // Purple
+        2: { hex: '0xe80c33', cup: 'cup-red' },     // Red
+        3: { hex: '0x61b571', cup: 'cup-green' },   // Green
+        4: { hex: '0x8B4513', cup: 'cup-brown' }    // Brown
     }
 };
 
 export const DECK_VALUES = {
-    number: [1, 2, 3, 4, 5],
+    number: [1, 2, 3, 4],
     assist: ['A', 'B', 'C', 'D', 'E']
 };
 
