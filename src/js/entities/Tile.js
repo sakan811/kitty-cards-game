@@ -86,6 +86,39 @@ export class Tile {
         });
     }
 
+    removeNumber() {
+        if (!this.hasNumber) return;
+
+        // Animate the score text disappearing
+        if (this.scoreText) {
+            this.scene.tweens.add({
+                targets: this.scoreText,
+                alpha: 0,
+                y: this.scoreText.y - 20,
+                duration: 200,
+                onComplete: () => {
+                    this.scoreText.destroy();
+                    this.scoreText = null;
+                }
+            });
+        }
+
+        // Reset tile properties
+        this.hasNumber = false;
+        this.score = 0;
+        this.sprite.setData('score', 0);
+
+        // Shake effect
+        this.scene.tweens.add({
+            targets: this.sprite,
+            x: this.sprite.x + 5,
+            duration: 50,
+            yoyo: true,
+            repeat: 2,
+            ease: 'Power2'
+        });
+    }
+
     destroy() {
         if (this.sprite?.active) this.sprite.destroy();
         if (this.scoreText?.active) this.scoreText.destroy();
