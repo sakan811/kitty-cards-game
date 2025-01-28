@@ -234,10 +234,21 @@ export class MainScene extends Phaser.Scene {
     }
 
     activateMeowsterCard(card) {
+        // Disable card clicking while effect is active
+        this.hand.cards.forEach(c => {
+            c.frontSprite?.removeInteractive();
+            c.backSprite?.removeInteractive();
+        });
+
         // Check if there are any assist cards in the discard pile
         const assistCards = this.discardPile.cards.filter(c => c.type === 'assist');
         if (assistCards.length === 0) {
             this.showWarning('No assist cards in discard pile!');
+            // Re-enable card clicking
+            this.hand.cards.forEach(c => {
+                c.frontSprite?.setInteractive({ useHandCursor: true });
+                c.backSprite?.setInteractive({ useHandCursor: true });
+            });
             return;
         }
 
@@ -278,15 +289,6 @@ export class MainScene extends Phaser.Scene {
             const container = this.add.container(x, y);
             container.setDepth(2002);
 
-            // Add a larger hit area rectangle that covers the entire card area plus some padding
-            const hitArea = this.add.rectangle(
-                0, 0,
-                CARD_DIMENSIONS.width + 40,  // Wider hit area
-                CARD_DIMENSIONS.height + 60,  // Taller hit area to include description
-                0xffffff, 0
-            ).setOrigin(0.5);
-            container.add(hitArea);
-
             // Add highlight effect
             const highlight = this.add.rectangle(
                 0, 0,
@@ -300,9 +302,9 @@ export class MainScene extends Phaser.Scene {
             displayCard.flip();
             
             // Set proper depth for all card elements
-            if (displayCard.frontSprite) displayCard.frontSprite.setDepth(1);
-            if (displayCard.text) displayCard.text.setDepth(2);
-            if (displayCard.border) displayCard.border.setDepth(1);
+            if (displayCard.frontSprite) displayCard.frontSprite.setDepth(2003);
+            if (displayCard.text) displayCard.text.setDepth(2004);
+            if (displayCard.border) displayCard.border.setDepth(2003);
             
             // Add card description
             const descText = this.add.text(
@@ -317,48 +319,65 @@ export class MainScene extends Phaser.Scene {
                     align: 'center',
                     wordWrap: { width: CARD_DIMENSIONS.width + 20 }
                 }
-            ).setOrigin(0.5).setDepth(2);
+            ).setOrigin(0.5).setDepth(2004);
 
             // Add all elements to container
             container.add([highlight, displayCard.frontSprite, displayCard.text]);
             if (displayCard.border) container.add(displayCard.border);
             container.add(descText);
 
-            // Make the hit area interactive
-            hitArea.setInteractive({ useHandCursor: true })
-                .on('pointerover', () => {
-                    highlight.setAlpha(0.5);
-                })
-                .on('pointerout', () => {
-                    highlight.setAlpha(0.3);
-                })
-                .on('pointerdown', async () => {
-                    // First check if hand has space
-                    if (this.hand.cards.length >= 10) {
-                        this.showWarning('Hand is full!');
-                        return;
-                    }
+            // Add hitbox on top of everything with highest depth
+            const hitArea = this.add.rectangle(
+                0, 0,
+                CARD_DIMENSIONS.width + 40,
+                CARD_DIMENSIONS.height + 60,
+                0xffffff, 0
+            ).setOrigin(0.5).setDepth(2005);
+            container.add(hitArea);
 
-                    // Move Meowster card to discard pile first
-                    this.hand.removeCard(card);
-                    this.selectedCard = null;
-                    this.discardPile.addCard(card);
+            // Make the hitbox interactive
+            hitArea.setInteractive({
+                useHandCursor: true
+            })
+            .on('pointerover', () => {
+                highlight.setAlpha(0.5);
+            })
+            .on('pointerout', () => {
+                highlight.setAlpha(0.3);
+            })
+            .on('pointerdown', async () => {
+                // First check if hand has space
+                if (this.hand.cards.length >= 10) {
+                    this.showWarning('Hand is full!');
+                    return;
+                }
 
-                    // Clean up selection UI
-                    overlay.destroy();
-                    titleText.destroy();
-                    cardButtons.forEach(btn => {
-                        btn.container.destroy();
-                        btn.displayCard.destroy();
-                    });
-                    if (cancelButton?.active) cancelButton.destroy();
+                // Move Meowster card to discard pile first
+                this.hand.removeCard(card);
+                this.selectedCard = null;
+                this.discardPile.addCard(card);
 
-                    // Create new card at the next available position in hand
-                    const handPosition = this.hand.getNextCardPosition();
-                    const newCard = new Card(this, handPosition.x, handPosition.y, 'assist', discardedCard.value);
-                    this.hand.addCard(newCard);
-                    await newCard.flip();
+                // Clean up selection UI
+                overlay.destroy();
+                titleText.destroy();
+                cardButtons.forEach(btn => {
+                    btn.container.destroy();
+                    btn.displayCard.destroy();
                 });
+                if (cancelButton?.active) cancelButton.destroy();
+
+                // Create new card at the next available position in hand
+                const handPosition = this.hand.getNextCardPosition();
+                const newCard = new Card(this, handPosition.x, handPosition.y, 'assist', discardedCard.value);
+                this.hand.addCard(newCard);
+                await newCard.flip();
+
+                // Re-enable card clicking after effect is complete
+                this.hand.cards.forEach(c => {
+                    c.frontSprite?.setInteractive({ useHandCursor: true });
+                    c.backSprite?.setInteractive({ useHandCursor: true });
+                });
+            });
 
             return {
                 container,
@@ -395,6 +414,12 @@ export class MainScene extends Phaser.Scene {
                 btn.displayCard.destroy();
             });
             cancelButton.destroy();
+
+            // Re-enable card clicking when cancelled
+            this.hand.cards.forEach(c => {
+                c.frontSprite?.setInteractive({ useHandCursor: true });
+                c.backSprite?.setInteractive({ useHandCursor: true });
+            });
         });
     }
 
