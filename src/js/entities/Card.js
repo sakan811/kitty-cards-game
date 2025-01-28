@@ -1,4 +1,4 @@
-import { CARD_DIMENSIONS, COLORS } from '../config/constants.js';
+import { CARD_DIMENSIONS, COLORS, ASSIST_CARDS } from '../config/constants.js';
 
 export class Card {
     constructor(scene, x, y, type, value) {
@@ -7,10 +7,11 @@ export class Card {
         this.value = value;
         this.isLifted = false;
 
+        // Create back sprite first (this will be the main sprite)
         this.createSprite(x, y);
-        if (type === 'number') {
-            this.createFrontSprite(x, y);
-        }
+        // Create front sprite for both types
+        this.createFrontSprite(x, y);
+        // Create text (will be shown after flip)
         this.createText(x, y);
         this.setInteractive();
         this.setupClickHandler();
@@ -24,12 +25,24 @@ export class Card {
             .setData('value', this.value)
             .setData('type', this.type)
             .setDepth(1);
+
+        // Add special styling for Bye-bye card
+        if (this.type === 'assist' && this.value === 'bye-bye') {
+            const graphics = this.scene.make.graphics();
+            graphics.lineStyle(3, 0xff4444);
+            graphics.strokeRect(0, 0, CARD_DIMENSIONS.width, CARD_DIMENSIONS.height);
+            graphics.generateTexture('bye-bye-border', CARD_DIMENSIONS.width, CARD_DIMENSIONS.height);
+            graphics.destroy();
+        }
     }
 
     createFrontSprite(x, y) {
+        let textureName;
+        let color;
+
         if (this.type === 'number') {
-            const color = COLORS.numberColors[this.value];
-            const textureName = `card-front-${this.value}`;
+            color = COLORS.numberColors[this.value];
+            textureName = `card-front-${this.value}`;
             
             // Create the colored front sprite
             const graphics = this.scene.make.graphics();
@@ -39,24 +52,75 @@ export class Card {
             graphics.strokeRect(0, 0, CARD_DIMENSIONS.width, CARD_DIMENSIONS.height);
             graphics.generateTexture(textureName, CARD_DIMENSIONS.width, CARD_DIMENSIONS.height);
             graphics.destroy();
-
-            this.frontSprite = this.scene.add.image(x, y, textureName)
-                .setDisplaySize(CARD_DIMENSIONS.width, CARD_DIMENSIONS.height)
-                .setVisible(false)
-                .setDepth(1);
+        } else {
+            textureName = `assist-front-${this.value}`;
             
+            // Create assist card front
+            const graphics = this.scene.make.graphics();
+            graphics.fillStyle(0xffffff, 1);
+            graphics.fillRect(0, 0, CARD_DIMENSIONS.width, CARD_DIMENSIONS.height);
+            graphics.lineStyle(2, 0x000000);
+            graphics.strokeRect(0, 0, CARD_DIMENSIONS.width, CARD_DIMENSIONS.height);
+            graphics.generateTexture(textureName, CARD_DIMENSIONS.width, CARD_DIMENSIONS.height);
+            graphics.destroy();
+        }
+
+        // Create front sprite (initially hidden)
+        this.frontSprite = this.scene.add.image(x, y, textureName)
+            .setDisplaySize(CARD_DIMENSIONS.width, CARD_DIMENSIONS.height)
+            .setVisible(false)
+            .setDepth(1);
+
+        if (this.type === 'number') {
             this.frontSprite.setData('matchingCup', color.cup);
+        }
+
+        // Add special border for bye-bye card
+        if (this.type === 'assist' && this.value === 'bye-bye') {
+            const borderTexture = 'bye-bye-border';
+            const graphics = this.scene.make.graphics();
+            graphics.lineStyle(3, 0xff4444);
+            graphics.strokeRect(0, 0, CARD_DIMENSIONS.width, CARD_DIMENSIONS.height);
+            graphics.generateTexture(borderTexture, CARD_DIMENSIONS.width, CARD_DIMENSIONS.height);
+            graphics.destroy();
+
+            this.border = this.scene.add.image(x, y, borderTexture)
+                .setDisplaySize(CARD_DIMENSIONS.width, CARD_DIMENSIONS.height)
+                .setDepth(2)
+                .setVisible(false);
         }
     }
 
     createText(x, y) {
-        const textConfig = this.type === 'number' 
-            ? { fontSize: '32px', color: '#FFFFFF', fontWeight: 'bold' }
-            : { fontSize: '24px', color: '#ff0000', fontWeight: 'bold' };
+        let textConfig;
+        if (this.type === 'assist' && this.value === 'bye-bye') {
+            textConfig = {
+                fontSize: '20px',
+                color: ASSIST_CARDS[this.value].color,
+                fontWeight: 'bold'
+            };
+        } else if (this.type === 'number') {
+            textConfig = {
+                fontSize: '32px',
+                color: '#FFFFFF',
+                fontWeight: 'bold'
+            };
+        } else {
+            textConfig = {
+                fontSize: '24px',
+                color: '#ff0000',
+                fontWeight: 'bold'
+            };
+        }
 
-        this.text = this.scene.add.text(x, y, this.value.toString(), textConfig)
+        this.text = this.scene.add.text(
+            x,
+            y,
+            this.type === 'assist' ? ASSIST_CARDS[this.value].name : this.value.toString(),
+            textConfig
+        )
             .setOrigin(0.5)
-            .setVisible(this.type === 'assist')
+            .setVisible(false)
             .setDepth(2);
     }
 
@@ -80,17 +144,36 @@ export class Card {
     }
 
     select() {
-        if (this.type !== 'number') return;
+        // Allow selection for both number and assist cards
+        const targets = [];
+        if (this.sprite?.active) targets.push(this.sprite);
+        if (this.frontSprite?.active) targets.push(this.frontSprite);
+        if (this.text?.active) targets.push(this.text);
+        if (this.border?.active) targets.push(this.border);
+
+        targets.forEach(target => {
+            target.setTint(0xffff99);
+        });
     }
 
     deselect() {
-        if (this.type !== 'number') return;
+        // Allow deselection for both number and assist cards
+        const targets = [];
+        if (this.sprite?.active) targets.push(this.sprite);
+        if (this.frontSprite?.active) targets.push(this.frontSprite);
+        if (this.text?.active) targets.push(this.text);
+        if (this.border?.active) targets.push(this.border);
+
+        targets.forEach(target => {
+            target.clearTint();
+        });
     }
 
     moveTo(x, y, duration = 200) {
         const targets = [this.sprite];
         if (this.frontSprite) targets.push(this.frontSprite);
         if (this.text) targets.push(this.text);
+        if (this.border) targets.push(this.border);
 
         return new Promise(resolve => {
             this.scene.tweens.add({
@@ -105,7 +188,7 @@ export class Card {
     }
 
     flip() {
-        if (this.type !== 'number' || !this.frontSprite) return;
+        if (!this.frontSprite) return;
 
         return new Promise(resolve => {
             this.scene.tweens.add({
@@ -117,9 +200,10 @@ export class Card {
                     this.sprite.destroy();
                     this.frontSprite.setVisible(true);
                     this.text.setVisible(true);
+                    if (this.border) this.border.setVisible(true);
                     
                     this.scene.tweens.add({
-                        targets: [this.frontSprite, this.text],
+                        targets: [this.frontSprite, this.text, ...(this.border ? [this.border] : [])],
                         scaleX: 1,
                         duration: 150,
                         ease: 'Linear',
@@ -195,5 +279,6 @@ export class Card {
         if (this.frontSprite?.active) this.frontSprite.destroy();
         if (this.text?.active) this.text.destroy();
         if (this.description?.active) this.description.destroy();
+        if (this.border?.active) this.border.destroy();
     }
 } 

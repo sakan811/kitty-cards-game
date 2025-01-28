@@ -2,6 +2,7 @@ import { COLORS, ASSET_KEYS, CARD_DIMENSIONS } from '../config/constants.js';
 import { Deck } from '../entities/Deck.js';
 import { Hand } from '../entities/Hand.js';
 import { Tile } from '../entities/Tile.js';
+import { DiscardPile } from '../entities/DiscardPile.js';
 
 export class MainScene extends Phaser.Scene {
     constructor() {
@@ -51,10 +52,12 @@ export class MainScene extends Phaser.Scene {
 
         // Create hand
         const handWidth = gameWidth * 0.6;
+        const handX = centerX - (handWidth / 2);
+        const handY = gameHeight - 150;
         this.hand = new Hand(
             this,
-            centerX - (handWidth / 2),
-            gameHeight - 150,
+            handX,
+            handY,
             handWidth
         );
 
@@ -74,6 +77,14 @@ export class MainScene extends Phaser.Scene {
                 'assist'
             )
         };
+
+        // Create discard pile to the right of the hand
+        const discardX = handX + handWidth + CARD_DIMENSIONS.width/2 + 20; // 20px spacing
+        this.discardPile = new DiscardPile(
+            this,
+            discardX,
+            handY + CARD_DIMENSIONS.height/2
+        );
 
         // Setup grid positions
         const positions = [
@@ -137,9 +148,8 @@ export class MainScene extends Phaser.Scene {
         if (card) {
             const added = this.hand.addCard(card);
             if (added) {
-                if (card.type === 'number') {
-                    card.flip();
-                }
+                // Flip both number and assist cards
+                card.flip();
             } else {
                 card.destroy();
             }
@@ -147,14 +157,19 @@ export class MainScene extends Phaser.Scene {
     }
 
     onTileClick(tile) {
-        if (this.selectedCard && this.selectedCard.type === 'number' && !tile.hasNumber) {
+        if (!this.selectedCard) return;
+
+        if (this.selectedCard.type === 'number' && !tile.hasNumber) {
             if (tile.applyCard(this.selectedCard)) {
                 // Update total points when a card is successfully applied
                 this.totalPoints = this.tiles.reduce((sum, t) => sum + (t.score || 0), 0);
                 this.pointsText.setText(`Total Points: ${this.totalPoints}`);
                 
-                this.hand.removeCard(this.selectedCard);
+                // Move card to discard pile
+                const card = this.selectedCard;
+                this.hand.removeCard(card);
                 this.selectedCard = null;
+                this.discardPile.addCard(card);
 
                 // Check if all tiles have numbers (game over condition)
                 const allTilesFilled = this.tiles.every(t => t.hasNumber);
@@ -162,6 +177,11 @@ export class MainScene extends Phaser.Scene {
                     this.gameOver();
                 }
             }
+        } else if (this.selectedCard.type === 'assist') {
+            if (this.selectedCard.value === 'bye-bye') {
+                this.activateByeByeCard(this.selectedCard);
+            }
+            // Add other assist card effects here
         }
     }
 
@@ -179,6 +199,32 @@ export class MainScene extends Phaser.Scene {
             card.select();
             card.lift();
         }
+    }
+
+    activateByeByeCard(card) {
+        // Check if there are any number cards placed
+        const hasPlacedCards = this.tiles.some(tile => tile.hasNumber);
+        if (!hasPlacedCards) {
+            this.showWarning('No cards to remove!');
+            return;
+        }
+
+        // Remove all number cards from tiles
+        this.tiles.forEach(tile => {
+            if (tile.hasNumber) {
+                tile.removeNumber();
+            }
+        });
+
+        // Update total points
+        this.totalPoints = 0;
+        this.pointsText.setText('Total Points: 0');
+
+        // Move card to discard pile
+        const byeByeCard = card;
+        this.hand.removeCard(card);
+        this.selectedCard = null;
+        this.discardPile.addCard(byeByeCard);
     }
 
     showWarning(message) {
