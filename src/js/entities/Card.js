@@ -26,13 +26,22 @@ export class Card {
             .setData('type', this.type)
             .setDepth(1);
 
-        // Add special styling for Bye-bye card
-        if (this.type === 'assist' && this.value === 'bye-bye') {
-            const graphics = this.scene.make.graphics();
-            graphics.lineStyle(3, 0xff4444);
-            graphics.strokeRect(0, 0, CARD_DIMENSIONS.width, CARD_DIMENSIONS.height);
-            graphics.generateTexture('bye-bye-border', CARD_DIMENSIONS.width, CARD_DIMENSIONS.height);
-            graphics.destroy();
+        // Add special styling for special assist cards
+        if (this.type === 'assist') {
+            let borderColor;
+            if (this.value === 'bye-bye') {
+                borderColor = 0xff4444;
+            } else if (this.value === 'meowster') {
+                borderColor = 0x4488ff;
+            }
+
+            if (borderColor) {
+                const graphics = this.scene.make.graphics();
+                graphics.lineStyle(3, borderColor);
+                graphics.strokeRect(0, 0, CARD_DIMENSIONS.width, CARD_DIMENSIONS.height);
+                graphics.generateTexture(`${this.value}-border`, CARD_DIMENSIONS.width, CARD_DIMENSIONS.height);
+                graphics.destroy();
+            }
         }
     }
 
@@ -75,40 +84,37 @@ export class Card {
             this.frontSprite.setData('matchingCup', color.cup);
         }
 
-        // Add special border for bye-bye card
-        if (this.type === 'assist' && this.value === 'bye-bye') {
-            const borderTexture = 'bye-bye-border';
-            const graphics = this.scene.make.graphics();
-            graphics.lineStyle(3, 0xff4444);
-            graphics.strokeRect(0, 0, CARD_DIMENSIONS.width, CARD_DIMENSIONS.height);
-            graphics.generateTexture(borderTexture, CARD_DIMENSIONS.width, CARD_DIMENSIONS.height);
-            graphics.destroy();
+        // Add special border for special assist cards
+        if (this.type === 'assist') {
+            let borderColor;
+            if (this.value === 'bye-bye') {
+                borderColor = 0xff4444;
+            } else if (this.value === 'meowster') {
+                borderColor = 0x4488ff;
+            }
 
-            this.border = this.scene.add.image(x, y, borderTexture)
-                .setDisplaySize(CARD_DIMENSIONS.width, CARD_DIMENSIONS.height)
-                .setDepth(2)
-                .setVisible(false);
+            if (borderColor) {
+                const borderTexture = `${this.value}-border`;
+                this.border = this.scene.add.image(x, y, borderTexture)
+                    .setDisplaySize(CARD_DIMENSIONS.width, CARD_DIMENSIONS.height)
+                    .setDepth(2)
+                    .setVisible(false);
+            }
         }
     }
 
     createText(x, y) {
         let textConfig;
-        if (this.type === 'assist' && this.value === 'bye-bye') {
+        if (this.type === 'assist') {
             textConfig = {
                 fontSize: '20px',
                 color: ASSIST_CARDS[this.value].color,
                 fontWeight: 'bold'
             };
-        } else if (this.type === 'number') {
+        } else {
             textConfig = {
                 fontSize: '32px',
                 color: '#FFFFFF',
-                fontWeight: 'bold'
-            };
-        } else {
-            textConfig = {
-                fontSize: '24px',
-                color: '#ff0000',
                 fontWeight: 'bold'
             };
         }
