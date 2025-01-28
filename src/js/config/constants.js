@@ -20,7 +20,19 @@ export const COLORS = {
 
 export const DECK_VALUES = {
     number: [1, 2, 3, 4],
-    assist: ['A', 'B', 'C', 'D', 'E']
+    assist: ['bye-bye', 'A', 'B', 'C', 'D']
+};
+
+export const ASSIST_CARDS = {
+    'bye-bye': {
+        name: 'Bye-bye',
+        description: 'Remove all number cards from cups',
+        color: '#ff4444'
+    },
+    'A': { name: 'A', description: 'Regular assist card', color: '#ffffff' },
+    'B': { name: 'B', description: 'Regular assist card', color: '#ffffff' },
+    'C': { name: 'C', description: 'Regular assist card', color: '#ffffff' },
+    'D': { name: 'D', description: 'Regular assist card', color: '#ffffff' }
 };
 
 export const ASSET_KEYS = {
