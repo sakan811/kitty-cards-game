@@ -155,6 +155,12 @@ export class MainScene extends Phaser.Scene {
                 
                 this.hand.removeCard(this.selectedCard);
                 this.selectedCard = null;
+
+                // Check if all tiles have numbers (game over condition)
+                const allTilesFilled = this.tiles.every(t => t.hasNumber);
+                if (allTilesFilled) {
+                    this.gameOver();
+                }
             }
         }
     }
@@ -189,5 +195,57 @@ export class MainScene extends Phaser.Scene {
         ).setOrigin(0.5);
         
         this.time.delayedCall(1000, () => warningText.destroy());
+    }
+
+    gameOver() {
+        // Create semi-transparent overlay
+        const overlay = this.add.rectangle(
+            0, 0,
+            this.scale.width,
+            this.scale.height,
+            0x000000, 0.7
+        ).setOrigin(0).setDepth(2000);
+
+        // Create game over text
+        const gameOverText = this.add.text(
+            this.scale.width/2,
+            this.scale.height/2 - 50,
+            'Game Over!',
+            {
+                fontSize: '48px',
+                color: '#ffffff',
+                fontStyle: 'bold'
+            }
+        ).setOrigin(0.5).setDepth(2001);
+
+        // Show final score
+        const finalScoreText = this.add.text(
+            this.scale.width/2,
+            this.scale.height/2 + 50,
+            `Final Score: ${this.totalPoints}`,
+            {
+                fontSize: '32px',
+                color: '#ffffff'
+            }
+        ).setOrigin(0.5).setDepth(2001);
+
+        // Add restart button
+        const restartButton = this.add.text(
+            this.scale.width/2,
+            this.scale.height/2 + 150,
+            'Play Again',
+            {
+                fontSize: '24px',
+                color: '#ffffff',
+                backgroundColor: '#4a4a4a',
+                padding: { x: 20, y: 10 }
+            }
+        )
+        .setOrigin(0.5)
+        .setDepth(2001)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => {
+            this.scene.restart();
+        });
     }
 } 
