@@ -20,7 +20,7 @@ export const COLORS = {
 
 export const DECK_VALUES = {
     number: [1, 2, 3, 4],
-    assist: ['bye-bye', 'A', 'B', 'C', 'D']
+    assist: ['bye-bye', 'meowster']
 };
 
 export const ASSIST_CARDS = {
@@ -29,10 +29,11 @@ export const ASSIST_CARDS = {
         description: 'Remove all number cards from cups',
         color: '#ff4444'
     },
-    'A': { name: 'A', description: 'Regular assist card', color: '#ffffff' },
-    'B': { name: 'B', description: 'Regular assist card', color: '#ffffff' },
-    'C': { name: 'C', description: 'Regular assist card', color: '#ffffff' },
-    'D': { name: 'D', description: 'Regular assist card', color: '#ffffff' }
+    'meowster': {
+        name: 'Meowster',
+        description: 'Select 1 assist card from discard pile',
+        color: '#4488ff'
+    },
 };
 
 export const ASSET_KEYS = {
