@@ -97,6 +97,10 @@ export class Hand {
         this.scene.time.delayedCall(1000, () => warningText.destroy());
     }
 
+    getNextCardPosition() {
+        return this.getCardPosition(this.cards.length);
+    }
+
     destroy() {
         this.cards.forEach(card => card.destroy());
         if (this.area?.active) this.area.destroy();
