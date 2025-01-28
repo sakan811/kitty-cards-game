@@ -69,24 +69,27 @@ export class DiscardPile {
             if (cardVisuals.sprite) {
                 this.cardSprites.push(cardVisuals);
 
-                // Set proper depth for stacking appearance
-                const depth = 10 + this.cardSprites.length;
-                cardVisuals.sprite.setDepth(depth);
-                if (cardVisuals.text?.active) cardVisuals.text.setDepth(depth + 1);
-                if (cardVisuals.border?.active) cardVisuals.border.setDepth(depth + 1);
+                // Clean up old cards first to maintain max 5 visible cards
+                while (this.cardSprites.length > 5) {
+                    const oldCard = this.cardSprites.shift();
+                    if (oldCard.sprite?.active) oldCard.sprite.destroy();
+                    if (oldCard.text?.active) oldCard.text.destroy();
+                    if (oldCard.border?.active) oldCard.border.destroy();
+                }
+
+                // Update depths for all visible cards
+                // Older cards get lower depths, newest card gets highest depth
+                this.cardSprites.forEach((visuals, index) => {
+                    const baseDepth = 10 + (index * 10); // Use larger intervals to prevent z-fighting
+                    if (visuals.sprite?.active) visuals.sprite.setDepth(baseDepth);
+                    if (visuals.text?.active) visuals.text.setDepth(baseDepth + 5); // Text slightly above its card
+                    if (visuals.border?.active) visuals.border.setDepth(baseDepth + 1); // Border just above card
+                });
 
                 // Clean up the back sprite if it still exists
                 if (card.sprite?.active) {
                     card.sprite.destroy();
                 }
-            }
-            
-            // Maintain only the last few visible cards to prevent memory issues
-            while (this.cardSprites.length > 5) {
-                const oldCard = this.cardSprites.shift();
-                if (oldCard.sprite?.active) oldCard.sprite.destroy();
-                if (oldCard.text?.active) oldCard.text.destroy();
-                if (oldCard.border?.active) oldCard.border.destroy();
             }
             
             // Update count display
