@@ -220,11 +220,14 @@ export class MainScene extends Phaser.Scene {
         this.totalPoints = 0;
         this.pointsText.setText('Total Points: 0');
 
+        // Clear card's description and deselect before moving to discard pile
+        card.lower();
+        card.deselect();
+
         // Move card to discard pile
-        const byeByeCard = card;
         this.hand.removeCard(card);
         this.selectedCard = null;
-        this.discardPile.addCard(byeByeCard);
+        this.discardPile.addCard(card);
     }
 
     showWarning(message) {
