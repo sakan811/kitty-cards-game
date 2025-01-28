@@ -1,8 +1,9 @@
-import { COLORS, ASSET_KEYS, CARD_DIMENSIONS } from '../config/constants.js';
+import { COLORS, ASSET_KEYS, CARD_DIMENSIONS, ASSIST_CARDS, HAND_CONFIG } from '../config/constants.js';
 import { Deck } from '../entities/Deck.js';
 import { Hand } from '../entities/Hand.js';
 import { Tile } from '../entities/Tile.js';
 import { DiscardPile } from '../entities/DiscardPile.js';
+import { Card } from '../entities/Card.js';
 
 export class MainScene extends Phaser.Scene {
     constructor() {
@@ -180,6 +181,8 @@ export class MainScene extends Phaser.Scene {
         } else if (this.selectedCard.type === 'assist') {
             if (this.selectedCard.value === 'bye-bye') {
                 this.activateByeByeCard(this.selectedCard);
+            } else if (this.selectedCard.value === 'meowster') {
+                this.activateMeowsterCard(this.selectedCard);
             }
             // Add other assist card effects here
         }
@@ -228,6 +231,171 @@ export class MainScene extends Phaser.Scene {
         this.hand.removeCard(card);
         this.selectedCard = null;
         this.discardPile.addCard(card);
+    }
+
+    activateMeowsterCard(card) {
+        // Check if there are any assist cards in the discard pile
+        const assistCards = this.discardPile.cards.filter(c => c.type === 'assist');
+        if (assistCards.length === 0) {
+            this.showWarning('No assist cards in discard pile!');
+            return;
+        }
+
+        // Clear the description of the Meowster card
+        card.lower();
+        card.deselect();
+
+        // Create a semi-transparent overlay
+        const overlay = this.add.rectangle(
+            0, 0,
+            this.scale.width,
+            this.scale.height,
+            0x000000, 0.7
+        ).setOrigin(0).setDepth(2000);
+
+        // Create title text
+        const titleText = this.add.text(
+            this.scale.width/2,
+            100,
+            'Select an assist card from discard pile',
+            {
+                fontSize: '32px',
+                color: '#ffffff',
+                backgroundColor: '#000000',
+                padding: { x: 20, y: 10 }
+            }
+        ).setOrigin(0.5).setDepth(2001);
+
+        // Display assist cards from discard pile
+        const cardSpacing = CARD_DIMENSIONS.width + 40;
+        const startX = this.scale.width/2 - (assistCards.length * cardSpacing)/2 + CARD_DIMENSIONS.width/2;
+        
+        const cardButtons = assistCards.map((discardedCard, index) => {
+            const x = startX + index * cardSpacing;
+            const y = this.scale.height/2;
+
+            // Create a container for the card and its elements
+            const container = this.add.container(x, y);
+            container.setDepth(2002);
+
+            // Add a larger hit area rectangle that covers the entire card area plus some padding
+            const hitArea = this.add.rectangle(
+                0, 0,
+                CARD_DIMENSIONS.width + 40,  // Wider hit area
+                CARD_DIMENSIONS.height + 60,  // Taller hit area to include description
+                0xffffff, 0
+            ).setOrigin(0.5);
+            container.add(hitArea);
+
+            // Add highlight effect
+            const highlight = this.add.rectangle(
+                0, 0,
+                CARD_DIMENSIONS.width + 20,
+                CARD_DIMENSIONS.height + 20,
+                0xffffff, 0.3
+            );
+
+            // Create a new card instance for display
+            const displayCard = new Card(this, 0, 0, 'assist', discardedCard.value);
+            displayCard.flip();
+            
+            // Set proper depth for all card elements
+            if (displayCard.frontSprite) displayCard.frontSprite.setDepth(1);
+            if (displayCard.text) displayCard.text.setDepth(2);
+            if (displayCard.border) displayCard.border.setDepth(1);
+            
+            // Add card description
+            const descText = this.add.text(
+                0,
+                CARD_DIMENSIONS.height/2 + 30,
+                ASSIST_CARDS[discardedCard.value].description,
+                {
+                    fontSize: '16px',
+                    color: '#ffffff',
+                    backgroundColor: '#000000',
+                    padding: { x: 10, y: 5 },
+                    align: 'center',
+                    wordWrap: { width: CARD_DIMENSIONS.width + 20 }
+                }
+            ).setOrigin(0.5).setDepth(2);
+
+            // Add all elements to container
+            container.add([highlight, displayCard.frontSprite, displayCard.text]);
+            if (displayCard.border) container.add(displayCard.border);
+            container.add(descText);
+
+            // Make the hit area interactive
+            hitArea.setInteractive({ useHandCursor: true })
+                .on('pointerover', () => {
+                    highlight.setAlpha(0.5);
+                })
+                .on('pointerout', () => {
+                    highlight.setAlpha(0.3);
+                })
+                .on('pointerdown', async () => {
+                    // First check if hand has space
+                    if (this.hand.cards.length >= 10) {
+                        this.showWarning('Hand is full!');
+                        return;
+                    }
+
+                    // Move Meowster card to discard pile first
+                    this.hand.removeCard(card);
+                    this.selectedCard = null;
+                    this.discardPile.addCard(card);
+
+                    // Clean up selection UI
+                    overlay.destroy();
+                    titleText.destroy();
+                    cardButtons.forEach(btn => {
+                        btn.container.destroy();
+                        btn.displayCard.destroy();
+                    });
+                    if (cancelButton?.active) cancelButton.destroy();
+
+                    // Create new card at the next available position in hand
+                    const handPosition = this.hand.getNextCardPosition();
+                    const newCard = new Card(this, handPosition.x, handPosition.y, 'assist', discardedCard.value);
+                    this.hand.addCard(newCard);
+                    await newCard.flip();
+                });
+
+            return {
+                container,
+                displayCard
+            };
+        });
+
+        // Add cancel button
+        const cancelButton = this.add.text(
+            this.scale.width/2,
+            this.scale.height - 100,
+            'Cancel',
+            {
+                fontSize: '24px',
+                color: '#ffffff',
+                backgroundColor: '#ff4444',
+                padding: { x: 20, y: 10 }
+            }
+        )
+        .setOrigin(0.5)
+        .setDepth(2005)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerover', () => {
+            cancelButton.setStyle({ backgroundColor: '#ff6666' });
+        })
+        .on('pointerout', () => {
+            cancelButton.setStyle({ backgroundColor: '#ff4444' });
+        })
+        .on('pointerdown', () => {
+            overlay.destroy();
+            titleText.destroy();
+            cardButtons.forEach(btn => {
+                btn.container.destroy();
+                btn.displayCard.destroy();
+            });
+            cancelButton.destroy();
+        });
     }
 
     showWarning(message) {
