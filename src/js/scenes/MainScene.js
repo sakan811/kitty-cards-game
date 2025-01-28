@@ -234,21 +234,15 @@ export class MainScene extends Phaser.Scene {
     }
 
     activateMeowsterCard(card) {
-        // Disable card clicking while effect is active
-        this.hand.cards.forEach(c => {
-            c.frontSprite?.removeInteractive();
-            c.backSprite?.removeInteractive();
-        });
+        // Disable all interactive elements while effect is active
+        this.disableAllInteractions();
 
         // Check if there are any assist cards in the discard pile
         const assistCards = this.discardPile.cards.filter(c => c.type === 'assist');
         if (assistCards.length === 0) {
             this.showWarning('No assist cards in discard pile!');
-            // Re-enable card clicking
-            this.hand.cards.forEach(c => {
-                c.frontSprite?.setInteractive({ useHandCursor: true });
-                c.backSprite?.setInteractive({ useHandCursor: true });
-            });
+            // Re-enable interactions
+            this.enableAllInteractions();
             return;
         }
 
@@ -372,11 +366,8 @@ export class MainScene extends Phaser.Scene {
                 this.hand.addCard(newCard);
                 await newCard.flip();
 
-                // Re-enable card clicking after effect is complete
-                this.hand.cards.forEach(c => {
-                    c.frontSprite?.setInteractive({ useHandCursor: true });
-                    c.backSprite?.setInteractive({ useHandCursor: true });
-                });
+                // Re-enable interactions after effect is complete
+                this.enableAllInteractions();
             });
 
             return {
@@ -415,12 +406,55 @@ export class MainScene extends Phaser.Scene {
             });
             cancelButton.destroy();
 
-            // Re-enable card clicking when cancelled
-            this.hand.cards.forEach(c => {
-                c.frontSprite?.setInteractive({ useHandCursor: true });
-                c.backSprite?.setInteractive({ useHandCursor: true });
-            });
+            // Re-enable interactions when cancelled
+            this.enableAllInteractions();
         });
+    }
+
+    disableAllInteractions() {
+        // Disable hand cards
+        this.hand.cards.forEach(c => {
+            c.frontSprite?.removeInteractive();
+            c.backSprite?.removeInteractive();
+        });
+
+        // Disable deck interactions
+        Object.values(this.decks).forEach(deck => {
+            deck.visual?.removeInteractive();
+        });
+
+        // Disable tile interactions
+        this.tiles.forEach(tile => {
+            tile.sprite?.removeInteractive();
+        });
+
+        // Disable discard pile interactions if any
+        if (this.discardPile.visual) {
+            this.discardPile.visual.removeInteractive();
+        }
+    }
+
+    enableAllInteractions() {
+        // Re-enable hand cards
+        this.hand.cards.forEach(c => {
+            c.frontSprite?.setInteractive({ useHandCursor: true });
+            c.backSprite?.setInteractive({ useHandCursor: true });
+        });
+
+        // Re-enable deck interactions
+        Object.values(this.decks).forEach(deck => {
+            deck.visual?.setInteractive({ useHandCursor: true });
+        });
+
+        // Re-enable tile interactions
+        this.tiles.forEach(tile => {
+            tile.sprite?.setInteractive({ useHandCursor: true });
+        });
+
+        // Re-enable discard pile interactions if any
+        if (this.discardPile.visual) {
+            this.discardPile.visual.setInteractive({ useHandCursor: true });
+        }
     }
 
     showWarning(message) {
