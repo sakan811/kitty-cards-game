@@ -15,13 +15,36 @@ export class MainScene extends Phaser.Scene {
         this.isPlayerTurn = false;
         this.playerId = null;
         this.opponentId = null;
+        this.roomId = null;
+        this.turnText = null;
+        this.gameState = null;
     }
 
     init(data) {
         console.log('MainScene init with data:', data);
         if (data && data.socket) {
             this.socket = data.socket;
+            this.roomId = data.roomId;
+            this.playerId = data.playerId;
+            
+            // Set opponent ID from the players list
+            if (data.players) {
+                this.opponentId = data.players.find(p => p.id !== this.playerId)?.id;
+            }
+
+            // Set initial game state
+            if (data.gameState) {
+                this.gameState = data.gameState;
+                this.isPlayerTurn = data.gameState.currentPlayer === this.playerId;
+            }
+            
             this.setupSocketListeners();
+            console.log('Game initialized with:', { 
+                roomId: this.roomId, 
+                playerId: this.playerId, 
+                opponentId: this.opponentId,
+                gameState: this.gameState
+            });
         } else {
             console.error('No socket provided to MainScene');
         }
@@ -33,47 +56,50 @@ export class MainScene extends Phaser.Scene {
             return;
         }
 
-        this.socket.on('gameStart', () => {
-            console.log('Game starting...');
-            this.startGame();
-        });
-
-        this.socket.on('gameUpdate', ({ playerId, action, data }) => {
-            console.log('Game update:', { playerId, action, data });
-            if (playerId !== this.socket.id) {
+        this.socket.on('gameUpdate', ({ roomId, playerId, action, data, gameState }) => {
+            if (roomId !== this.roomId) return;
+            console.log('Game update:', { playerId, action, data, gameState });
+            
+            // Update game state
+            this.gameState = gameState;
+            
+            if (playerId !== this.playerId) {
                 this.handleOpponentAction(action, data);
             }
         });
 
-        this.socket.on('playerLeft', () => {
-            this.showGameOver('Opponent left the game');
+        this.socket.on('turnUpdate', ({ roomId, currentPlayer }) => {
+            if (roomId === this.roomId) {
+                this.isPlayerTurn = currentPlayer === this.playerId;
+                this.updateTurnIndicator();
+                if (this.isPlayerTurn) {
+                    this.enableAllInteractions();
+                } else {
+                    this.disableAllInteractions();
+                }
+            }
+        });
+
+        this.socket.on('playerLeft', ({ roomId }) => {
+            if (roomId === this.roomId) {
+                this.showGameOver('Opponent left the game');
+            }
         });
     }
 
     handleOpponentAction(action, data) {
         switch (action) {
-            case 'cardPlayed':
-                this.handleOpponentCardPlayed(data);
+            case 'playCard':
+                const tile = this.tiles[data.tileIndex];
+                if (tile) {
+                    tile.setNumber(data.cardValue);
+                }
                 break;
-            case 'cardDrawn':
-                this.handleOpponentCardDrawn();
+            case 'drawCard':
+                // Update opponent's hand visualization
+                this.updateOpponentHand();
                 break;
-            // Add more actions as needed
         }
-    }
-
-    handleOpponentCardPlayed(cardData) {
-        // Create a sprite for the opponent's played card
-        const sprite = this.add.sprite(cardData.x, cardData.y, 'card')
-            .setOrigin(0.5)
-            .setInteractive();
-        
-        // Add any additional card properties/animations here
-    }
-
-    handleOpponentCardDrawn() {
-        // Update opponent's hand visualization
-        // Show card draw animation
     }
 
     createOpponentHand() {
@@ -110,6 +136,13 @@ export class MainScene extends Phaser.Scene {
     }
 
     create() {
+        if (!this.gameState || !this.gameState.tiles) {
+            console.error('No game state available');
+            return;
+        }
+
+        console.log('Creating game scene with state:', this.gameState);
+
         const gameWidth = this.scale.width;
         const gameHeight = this.scale.height;
         
@@ -124,6 +157,57 @@ export class MainScene extends Phaser.Scene {
         const centerY = gameHeight / 2;
         const gridStartX = centerX - (gridWidth / 2);
         const gridStartY = centerY - (gridHeight / 2);
+
+        // Setup grid positions
+        const positions = [
+            // Top row
+            { x: gridStartX, y: gridStartY },
+            { x: gridStartX + tileSize + tileSpacing, y: gridStartY },
+            { x: gridStartX + (tileSize * 2) + (tileSpacing * 2), y: gridStartY },
+            
+            // Middle row (sides only)
+            { x: gridStartX, y: gridStartY + tileSpacing + tileSize },
+            { x: gridStartX + (tileSize * 2) + (tileSpacing * 2), y: gridStartY + tileSpacing + tileSize },
+            
+            // Bottom row
+            { x: gridStartX, y: gridStartY + (tileSize * 2) + (tileSpacing * 2) },
+            { x: gridStartX + tileSize + tileSpacing, y: gridStartY + (tileSize * 2) + (tileSpacing * 2) },
+            { x: gridStartX + (tileSize * 2) + (tileSpacing * 2), y: gridStartY + (tileSize * 2) + (tileSpacing * 2) }
+        ];
+
+        // Create tiles based on server's game state
+        this.tiles = [];
+        this.gameState.tiles.forEach((tileData, index) => {
+            const pos = positions[index];
+            const cupColor = tileData.cupColor;
+            const assetKey = ASSET_KEYS[cupColor.split('-').map((part, i) => 
+                i === 0 ? part : part.charAt(0).toUpperCase() + part.slice(1)
+            ).join('')];
+            
+            console.log('Creating tile:', {
+                position: index,
+                hasCup: tileData.hasCup,
+                cupColor: tileData.cupColor,
+                assetKey: assetKey
+            });
+            
+            const tile = new Tile(
+                this,
+                pos.x + (tileSize/2),
+                pos.y + (tileSize/2),
+                tileSize,
+                assetKey
+            );
+            this.tiles.push(tile);
+
+            // Apply any existing numbers
+            if (tileData.hasNumber) {
+                tile.setNumber(tileData.number);
+            }
+
+            tile.sprite.setInteractive({ useHandCursor: true });
+            tile.sprite.on('pointerdown', () => this.onTileClick(tile, index));
+        });
 
         // Create hand
         const handWidth = gameWidth * 0.6;
@@ -153,55 +237,25 @@ export class MainScene extends Phaser.Scene {
             )
         };
 
-        // Create discard pile to the right of the hand
-        const discardX = handX + handWidth + CARD_DIMENSIONS.width/2 + 20; // 20px spacing
+        // Make decks interactive
+        Object.values(this.decks).forEach(deck => {
+            deck.visual.setInteractive({ useHandCursor: true });
+            deck.visual.on('pointerdown', () => this.onDeckClick(deck));
+        });
+
+        // Create discard pile
+        const discardX = handX + handWidth + CARD_DIMENSIONS.width/2 + 20;
         this.discardPile = new DiscardPile(
             this,
             discardX,
             handY + CARD_DIMENSIONS.height/2
         );
 
-        // Setup grid positions
-        const positions = [
-            // Top row
-            { x: gridStartX, y: gridStartY },
-            { x: gridStartX + tileSize + tileSpacing, y: gridStartY },
-            { x: gridStartX + (tileSize * 2) + (tileSpacing * 2), y: gridStartY },
-            
-            // Middle row (sides only)
-            { x: gridStartX, y: gridStartY + tileSpacing + tileSize },
-            { x: gridStartX + (tileSize * 2) + (tileSpacing * 2), y: gridStartY + tileSpacing + tileSize },
-            
-            // Bottom row
-            { x: gridStartX, y: gridStartY + (tileSize * 2) + (tileSpacing * 2) },
-            { x: gridStartX + tileSize + tileSpacing, y: gridStartY + (tileSize * 2) + (tileSpacing * 2) },
-            { x: gridStartX + (tileSize * 2) + (tileSpacing * 2), y: gridStartY + (tileSize * 2) + (tileSpacing * 2) }
-        ];
-
-        // Create tiles
-        this.tiles = [];
-        const tileIndices = Phaser.Utils.Array.Shuffle([0, 1, 2, 3, 4, 5, 6, 7]);
-        const selectedColors = Phaser.Utils.Array.Shuffle([...COLORS.cupColors]).slice(0, 4);
-        
-        positions.forEach((pos, index) => {
-            const hasCup = tileIndices.indexOf(index) < 4;
-            const cupColor = hasCup ? selectedColors[tileIndices.indexOf(index)] : ASSET_KEYS.cupWhite;
-            
-            const tile = new Tile(this, pos.x + (tileSize/2), pos.y + (tileSize/2), tileSize, cupColor);
-            this.tiles.push(tile);
-
-            tile.sprite.on('pointerdown', () => this.onTileClick(tile));
-        });
-
-        // Setup deck event handlers
-        this.decks.number.visual.on('pointerdown', () => this.onDeckClick(this.decks.number));
-        this.decks.assist.visual.on('pointerdown', () => this.onDeckClick(this.decks.assist));
-
         // Add total points display
         this.pointsText = this.add.text(
             this.scale.width - 20,
             20,
-            'Total Points: 0',
+            `Total Points: ${this.gameState.scores[this.playerId] || 0}`,
             {
                 fontSize: '24px',
                 color: '#000000',
@@ -211,9 +265,46 @@ export class MainScene extends Phaser.Scene {
         )
         .setOrigin(1, 0)
         .setDepth(1000);
+
+        // Add turn indicator
+        this.turnText = this.add.text(
+            20,
+            20,
+            '',
+            {
+                fontSize: '24px',
+                color: '#000000',
+                backgroundColor: '#ffffff',
+                padding: { x: 10, y: 5 }
+            }
+        )
+        .setOrigin(0, 0)
+        .setDepth(1000);
+
+        // Set initial turn state
+        this.updateTurnIndicator();
+        if (this.isPlayerTurn) {
+            this.enableAllInteractions();
+        } else {
+            this.disableAllInteractions();
+        }
+
+        console.log('Game scene created successfully');
+    }
+
+    updateTurnIndicator() {
+        if (this.turnText) {
+            this.turnText.setText(this.isPlayerTurn ? 'Your Turn' : "Opponent's Turn");
+            this.turnText.setBackgroundColor(this.isPlayerTurn ? '#90EE90' : '#FFB6C1');
+        }
     }
 
     onDeckClick(deck) {
+        if (!this.isPlayerTurn) {
+            this.showWarning('Not your turn!');
+            return;
+        }
+
         if (this.hand.cards.length >= 10) {
             this.showWarning('Hand is full!');
             return;
@@ -223,22 +314,38 @@ export class MainScene extends Phaser.Scene {
         if (card) {
             const added = this.hand.addCard(card);
             if (added) {
-                // Flip both number and assist cards
                 card.flip();
+                // Notify server
+                this.socket.emit('gameAction', {
+                    roomId: this.roomId,
+                    action: 'drawCard',
+                    data: { deckType: deck.type }
+                });
             } else {
                 card.destroy();
             }
         }
     }
 
-    onTileClick(tile) {
+    onTileClick(tile, tileIndex) {
+        if (!this.isPlayerTurn) {
+            this.showWarning('Not your turn!');
+            return;
+        }
+
         if (!this.selectedCard) return;
 
         if (this.selectedCard.type === 'number' && !tile.hasNumber) {
             if (tile.applyCard(this.selectedCard)) {
-                // Update total points when a card is successfully applied
-                this.totalPoints = this.tiles.reduce((sum, t) => sum + (t.score || 0), 0);
-                this.pointsText.setText(`Total Points: ${this.totalPoints}`);
+                // Notify server about the move
+                this.socket.emit('gameAction', {
+                    roomId: this.roomId,
+                    action: 'playCard',
+                    data: {
+                        tileIndex,
+                        cardValue: this.selectedCard.value
+                    }
+                });
                 
                 // Move card to discard pile
                 const card = this.selectedCard;
@@ -246,9 +353,12 @@ export class MainScene extends Phaser.Scene {
                 this.selectedCard = null;
                 this.discardPile.addCard(card);
 
-                // Check if all tiles have numbers (game over condition)
-                const allTilesFilled = this.tiles.every(t => t.hasNumber);
-                if (allTilesFilled) {
+                // Update total points from server state
+                this.totalPoints = this.gameState.scores[this.playerId] || 0;
+                this.pointsText.setText(`Total Points: ${this.totalPoints}`);
+
+                // Check game over
+                if (this.gameState.tiles.every(t => t.hasNumber)) {
                     this.gameOver();
                 }
             }
@@ -599,14 +709,18 @@ export class MainScene extends Phaser.Scene {
 
     startTurn() {
         this.isPlayerTurn = true;
-        // Enable interactions
-        // Show turn indicator
+        this.updateTurnIndicator();
+        this.enableAllInteractions();
     }
 
     endTurn() {
         this.isPlayerTurn = false;
-        // Disable interactions
-        // Update turn indicator
+        this.updateTurnIndicator();
+        this.disableAllInteractions();
+        this.socket.emit('gameAction', {
+            roomId: this.roomId,
+            action: 'endTurn'
+        });
     }
 
     showGameOver(message) {
