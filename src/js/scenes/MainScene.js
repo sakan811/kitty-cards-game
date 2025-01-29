@@ -63,9 +63,12 @@ export class MainScene extends Phaser.Scene {
     }
 
     handleOpponentCardPlayed(cardData) {
-        // Update opponent's hand visualization
-        // Show the card being played
-        // Update game state
+        // Create a sprite for the opponent's played card
+        const sprite = this.add.sprite(cardData.x, cardData.y, 'card')
+            .setOrigin(0.5)
+            .setInteractive();
+        
+        // Add any additional card properties/animations here
     }
 
     handleOpponentCardDrawn() {
@@ -260,29 +263,20 @@ export class MainScene extends Phaser.Scene {
     }
 
     onCardClick(card) {
-        if (!this.isPlayerTurn) return;
-        
-        if (this.selectedCard === card) {
-            this.selectedCard = null;
+        if (!this.isPlayerTurn) {
             card.deselect();
             card.lower();
-        } else {
-            if (this.selectedCard) {
-                this.selectedCard.deselect();
-                this.selectedCard.lower();
-            }
-            this.selectedCard = card;
-            card.select();
-            card.lift();
+            return;
         }
 
-        // Emit the action to other player
+        const cardData = card.getData();
         this.socket.emit('gameAction', {
             action: 'cardPlayed',
             data: {
-                type: card.type,
-                value: card.value,
-                // Add any other necessary card data
+                type: cardData.type,
+                value: cardData.value,
+                x: cardData.x || 400,
+                y: cardData.y || 300
             }
         });
     }
@@ -496,24 +490,25 @@ export class MainScene extends Phaser.Scene {
 
     disableAllInteractions() {
         // Disable hand cards
-        this.hand.cards.forEach(c => {
-            c.frontSprite?.removeInteractive();
-            c.backSprite?.removeInteractive();
-        });
+        if (this.hand?.cards) {
+            this.hand.cards.forEach(c => {
+                c.frontSprite?.removeInteractive();
+                c.backSprite?.removeInteractive();
+            });
+        }
 
-        // Disable deck interactions
-        Object.values(this.decks).forEach(deck => {
-            deck.visual?.removeInteractive();
-        });
+        // Disable decks
+        if (this.decks) {
+            Object.values(this.decks).forEach(deck => {
+                deck.visual?.removeInteractive();
+            });
+        }
 
-        // Disable tile interactions
-        this.tiles.forEach(tile => {
-            tile.sprite?.removeInteractive();
-        });
-
-        // Disable discard pile interactions if any
-        if (this.discardPile.visual) {
-            this.discardPile.visual.removeInteractive();
+        // Disable tiles
+        if (this.tiles) {
+            this.tiles.forEach(tile => {
+                tile.sprite?.removeInteractive();
+            });
         }
     }
 
@@ -557,18 +552,12 @@ export class MainScene extends Phaser.Scene {
     }
 
     gameOver() {
-        // Create semi-transparent overlay
-        const overlay = this.add.rectangle(
-            0, 0,
-            this.scale.width,
-            this.scale.height,
-            0x000000, 0.7
-        ).setOrigin(0).setDepth(2000);
-
-        // Create game over text
+        this.disableAllInteractions();
+        
+        // Add game over text in the center of the screen
         const gameOverText = this.add.text(
-            this.scale.width/2,
-            this.scale.height/2 - 50,
+            this.scale.width / 2,
+            this.scale.height / 2,
             'Game Over!',
             {
                 fontSize: '48px',
@@ -621,7 +610,19 @@ export class MainScene extends Phaser.Scene {
     }
 
     showGameOver(message) {
-        // Show game over message
-        // Add option to return to lobby
+        this.disableAllInteractions();
+        
+        // Add game over text in the center of the screen
+        const gameOverText = this.add.text(
+            this.scale.width / 2,
+            this.scale.height / 2,
+            message,
+            {
+                fontSize: '32px',
+                fill: '#000000',
+                backgroundColor: '#ffffff',
+                padding: { x: 20, y: 10 }
+            }
+        ).setOrigin(0.5);
     }
 } 
