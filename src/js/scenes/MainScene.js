@@ -18,6 +18,21 @@ export class MainScene extends Phaser.Scene {
         this.roomId = null;
         this.turnText = null;
         this.gameState = null;
+        this.hand = {
+            cards: [],
+            addCard: (card) => {
+                this.hand.cards.push(card);
+                return true;
+            },
+            removeCard: (card) => {
+                const index = this.hand.cards.indexOf(card);
+                if (index > -1) {
+                    this.hand.cards.splice(index, 1);
+                    return true;
+                }
+                return false;
+            }
+        };
     }
 
     init(data) {
@@ -88,17 +103,27 @@ export class MainScene extends Phaser.Scene {
     }
 
     handleOpponentAction(action, data) {
-        switch (action) {
-            case 'playCard':
-                const tile = this.tiles[data.tileIndex];
-                if (tile) {
-                    tile.setNumber(data.cardValue);
+        console.log('Handling opponent action:', action, data);
+        if (action === 'cardPlayed') {
+            this.add.sprite(data.x, data.y, 'card');
+        }
+    }
+
+    handleTurnUpdate({ isPlayerTurn }) {
+        console.log('Handling turn update:', isPlayerTurn);
+        this.isPlayerTurn = isPlayerTurn;
+        this.updateTurnIndicator();
+        if (this.isPlayerTurn) {
+            if (this.decks) {
+                if (this.decks.number && this.decks.number.visual) {
+                    this.decks.number.visual.setInteractive();
                 }
-                break;
-            case 'drawCard':
-                // Update opponent's hand visualization
-                this.updateOpponentHand();
-                break;
+                if (this.decks.assist && this.decks.assist.visual) {
+                    this.decks.assist.visual.setInteractive();
+                }
+            }
+        } else {
+            this.disableAllInteractions();
         }
     }
 
@@ -374,8 +399,13 @@ export class MainScene extends Phaser.Scene {
 
     onCardClick(card) {
         if (!this.isPlayerTurn) {
-            card.deselect();
-            card.lower();
+            if (card.deselect) card.deselect();
+            if (card.lower) card.lower();
+            return;
+        }
+
+        if (!card.getData) {
+            console.error('Card missing getData method');
             return;
         }
 
@@ -383,10 +413,9 @@ export class MainScene extends Phaser.Scene {
         this.socket.emit('gameAction', {
             action: 'cardPlayed',
             data: {
-                type: cardData.type,
                 value: cardData.value,
-                x: cardData.x || 400,
-                y: cardData.y || 300
+                x: cardData.x,
+                y: cardData.y
             }
         });
     }
@@ -599,11 +628,10 @@ export class MainScene extends Phaser.Scene {
     }
 
     disableAllInteractions() {
-        // Disable hand cards
-        if (this.hand?.cards) {
+        if (this.hand && this.hand.cards) {
             this.hand.cards.forEach(c => {
-                c.frontSprite?.removeInteractive();
-                c.backSprite?.removeInteractive();
+                if (c.frontSprite) c.frontSprite.disableInteractive();
+                if (c.backSprite) c.backSprite.disableInteractive();
             });
         }
 
@@ -623,25 +651,13 @@ export class MainScene extends Phaser.Scene {
     }
 
     enableAllInteractions() {
-        // Re-enable hand cards
-        this.hand.cards.forEach(c => {
-            c.frontSprite?.setInteractive({ useHandCursor: true });
-            c.backSprite?.setInteractive({ useHandCursor: true });
-        });
-
-        // Re-enable deck interactions
-        Object.values(this.decks).forEach(deck => {
-            deck.visual?.setInteractive({ useHandCursor: true });
-        });
-
-        // Re-enable tile interactions
-        this.tiles.forEach(tile => {
-            tile.sprite?.setInteractive({ useHandCursor: true });
-        });
-
-        // Re-enable discard pile interactions if any
-        if (this.discardPile.visual) {
-            this.discardPile.visual.setInteractive({ useHandCursor: true });
+        if (this.decks) {
+            if (this.decks.number && this.decks.number.visual) {
+                this.decks.number.visual.setInteractive();
+            }
+            if (this.decks.assist && this.decks.assist.visual) {
+                this.decks.assist.visual.setInteractive();
+            }
         }
     }
 
