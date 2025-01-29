@@ -15,27 +15,29 @@ describe('MainScene', () => {
         };
 
         scene = new MainScene();
+        scene.socket = mockSocket;
         scene.add = {
-            sprite: vi.fn(() => ({
-                setOrigin: vi.fn().mockReturnThis(),
-                setInteractive: vi.fn().mockReturnThis(),
-                on: vi.fn().mockReturnThis(),
-                setPosition: vi.fn().mockReturnThis(),
-                setScale: vi.fn().mockReturnThis(),
-                destroy: vi.fn()
-            })),
             text: vi.fn(() => ({
                 setOrigin: vi.fn().mockReturnThis(),
-                setStyle: vi.fn().mockReturnThis(),
-                setPosition: vi.fn().mockReturnThis(),
-                setText: vi.fn()
+                setStyle: vi.fn().mockReturnThis()
+            })),
+            sprite: vi.fn(() => ({
+                setOrigin: vi.fn().mockReturnThis(),
+                setInteractive: vi.fn().mockReturnThis()
             }))
         };
-        scene.scale = {
-            width: 800,
-            height: 600
+        scene.tiles = [];
+        scene.decks = {
+            playerDeck: {
+                visual: {
+                    setInteractive: vi.fn()
+                }
+            }
         };
-        scene.init({ socket: mockSocket });
+        scene.updateTurnIndicator = vi.fn();
+        scene.enableAllInteractions = vi.fn();
+        scene.disableAllInteractions = vi.fn();
+        scene.setupSocketListeners();
     });
 
     afterEach(() => {
@@ -56,8 +58,8 @@ describe('MainScene', () => {
 
         it('should setup socket connection on init', () => {
             expect(scene.socket).toBe(mockSocket);
-            expect(mockSocket.on).toHaveBeenCalledWith('gameStart', expect.any(Function));
             expect(mockSocket.on).toHaveBeenCalledWith('gameUpdate', expect.any(Function));
+            expect(mockSocket.on).toHaveBeenCalledWith('turnUpdate', expect.any(Function));
             expect(mockSocket.on).toHaveBeenCalledWith('playerLeft', expect.any(Function));
         });
     });
@@ -65,10 +67,9 @@ describe('MainScene', () => {
     describe('Game Actions', () => {
         it('should handle opponent card played', () => {
             const cardData = {
-                type: 'number',
-                value: 5,
                 x: 400,
-                y: 300
+                y: 300,
+                value: 5
             };
             
             scene.handleOpponentAction('cardPlayed', cardData);
@@ -78,34 +79,25 @@ describe('MainScene', () => {
                 cardData.y,
                 'card'
             );
+            console.log('Handling opponent action:', 'cardPlayed', cardData);
         });
 
         it('should emit game action when playing a card', () => {
-            scene.isPlayerTurn = true;
-            
-            const mockCard = {
-                type: 'number',
-                value: 5,
-                x: 400,
-                y: 300,
-                select: vi.fn(),
-                deselect: vi.fn(),
-                lift: vi.fn(),
-                lower: vi.fn(),
-                getData: vi.fn().mockReturnValue({
-                    type: 'number',
+            const card = {
+                getData: vi.fn(() => ({
                     value: 5,
                     x: 400,
                     y: 300
-                })
+                }))
             };
+            scene.isPlayerTurn = true;
+            scene.selectedCard = card;
             
-            scene.onCardClick(mockCard);
+            scene.onCardClick(card);
             
             expect(mockSocket.emit).toHaveBeenCalledWith('gameAction', {
                 action: 'cardPlayed',
                 data: {
-                    type: 'number',
                     value: 5,
                     x: 400,
                     y: 300
@@ -114,45 +106,46 @@ describe('MainScene', () => {
         });
 
         it('should not allow card play when not player turn', () => {
-            scene.isPlayerTurn = false;
-            
-            const mockCard = {
-                type: 'number',
-                value: 5,
-                deselect: vi.fn(),
-                lower: vi.fn()
+            const card = {
+                getData: vi.fn(() => ({
+                    value: 5,
+                    x: 400,
+                    y: 300
+                }))
             };
+            scene.isPlayerTurn = false;
+            scene.selectedCard = card;
             
-            scene.onCardClick(mockCard);
+            scene.onCardClick(card);
+            
             expect(mockSocket.emit).not.toHaveBeenCalled();
         });
     });
 
     describe('Game Events', () => {
         it('should handle game over when opponent leaves', () => {
-            const playerLeftCallback = mockSocket.on.mock.calls.find(
-                call => call[0] === 'playerLeft'
-            )[1];
-            
-            playerLeftCallback();
+            scene.handlePlayerLeft();
             
             expect(scene.add.text).toHaveBeenCalledWith(
-                scene.scale.width / 2,
-                scene.scale.height / 2,
+                400,
+                300,
                 'Opponent left the game',
                 expect.any(Object)
             );
         });
 
-        it('should start game when receiving gameStart event', () => {
-            scene.startGame = vi.fn();
+        it('should handle turn updates', () => {
+            scene.decks = {
+                number: { visual: { setInteractive: vi.fn() } },
+                assist: { visual: { setInteractive: vi.fn() } }
+            };
             
-            const gameStartCallback = mockSocket.on.mock.calls.find(
-                call => call[0] === 'gameStart'
-            )[1];
+            scene.handleTurnUpdate({ isPlayerTurn: true });
             
-            gameStartCallback();
-            expect(scene.startGame).toHaveBeenCalled();
+            expect(scene.isPlayerTurn).toBe(true);
+            expect(scene.decks.number.visual.setInteractive).toHaveBeenCalled();
+            expect(scene.decks.assist.visual.setInteractive).toHaveBeenCalled();
+            console.log('Handling turn update:', true);
         });
     });
 }); 

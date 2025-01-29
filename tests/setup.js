@@ -18,17 +18,21 @@ global.Phaser = {
         }
     },
     Scene: class Scene {
-        constructor(config) {
-            this.config = config;
+        constructor() {
             this.sys = {
-                settings: { data: {} },
+                settings: {
+                    data: {}
+                },
                 game: {
-                    config: {},
                     scale: {
                         width: 800,
                         height: 600
                     }
                 }
+            };
+            this.scale = {
+                width: 800,
+                height: 600
             };
             this.add = {
                 sprite: vi.fn(() => ({
@@ -37,36 +41,31 @@ global.Phaser = {
                     on: vi.fn().mockReturnThis(),
                     setPosition: vi.fn().mockReturnThis(),
                     setScale: vi.fn().mockReturnThis(),
-                    destroy: vi.fn()
+                    destroy: vi.fn(),
+                    setVisible: vi.fn().mockReturnThis()
                 })),
                 text: vi.fn(() => ({
                     setOrigin: vi.fn().mockReturnThis(),
                     setStyle: vi.fn().mockReturnThis(),
                     setPosition: vi.fn().mockReturnThis(),
-                    setText: vi.fn()
+                    setText: vi.fn().mockReturnThis(),
+                    destroy: vi.fn(),
+                    setVisible: vi.fn().mockReturnThis()
                 })),
                 rectangle: vi.fn(() => ({
+                    setStrokeStyle: vi.fn().mockReturnThis(),
                     setOrigin: vi.fn().mockReturnThis(),
                     setInteractive: vi.fn().mockReturnThis(),
                     on: vi.fn().mockReturnThis(),
-                    setAlpha: vi.fn().mockReturnThis(),
                     setPosition: vi.fn().mockReturnThis(),
-                    setStrokeStyle: vi.fn().mockReturnThis(),
-                    setFillStyle: vi.fn().mockReturnThis()
+                    setScale: vi.fn().mockReturnThis(),
+                    destroy: vi.fn(),
+                    setVisible: vi.fn().mockReturnThis()
                 })),
                 container: vi.fn(() => ({
-                    add: vi.fn(),
-                    setVisible: vi.fn(),
-                    setPosition: vi.fn()
-                }))
-            };
-            this.make = {
-                graphics: vi.fn(() => ({
-                    fillStyle: vi.fn().mockReturnThis(),
-                    fillRect: vi.fn().mockReturnThis(),
-                    lineStyle: vi.fn().mockReturnThis(),
-                    strokeRect: vi.fn().mockReturnThis(),
-                    generateTexture: vi.fn(),
+                    add: vi.fn().mockReturnThis(),
+                    setPosition: vi.fn().mockReturnThis(),
+                    setVisible: vi.fn().mockReturnThis(),
                     destroy: vi.fn()
                 }))
             };
@@ -75,13 +74,22 @@ global.Phaser = {
                 stop: vi.fn(),
                 launch: vi.fn()
             };
-            this.scale = {
-                width: 800,
-                height: 600
-            };
             this.load = {
                 image: vi.fn()
             };
+            this.time = {
+                delayedCall: vi.fn((delay, callback) => {
+                    setTimeout(callback, delay);
+                    return { destroy: vi.fn() };
+                }),
+                addEvent: vi.fn((config) => ({
+                    destroy: vi.fn(),
+                    remove: vi.fn()
+                }))
+            };
+            this.mainContainer = this.add.container();
+            this.waitingContainer = this.add.container();
+            this.decks = {};
         }
 
         init(data) {
@@ -92,13 +100,16 @@ global.Phaser = {
         }
 
         setupSocketListeners() {
-            this.socket.on('gameStart', () => this.startGame());
-            this.socket.on('gameUpdate', (data) => this.handleGameUpdate(data));
-            this.socket.on('playerLeft', () => this.handlePlayerLeft());
+            if (this.socket) {
+                this.socket.on('gameStart', () => this.startGame());
+                this.socket.on('gameUpdate', (data) => this.handleGameUpdate(data));
+                this.socket.on('playerLeft', () => this.handlePlayerLeft());
+            }
         }
 
         handleOpponentAction(action, data) {
             if (action === 'cardPlayed') {
+                console.log('Handling opponent action:', action, data);
                 this.add.sprite(data.x, data.y, 'card');
             }
         }
@@ -173,12 +184,93 @@ global.cancelAnimationFrame = vi.fn();
 // Mock performance.now()
 global.performance.now = vi.fn(() => Date.now());
 
-// Mock Socket.IO
-global.io = vi.fn(() => ({
-    on: vi.fn(),
-    emit: vi.fn(),
-    id: 'test-socket-id'
-}));
+// Mock Socket.IO client
+const mockSocketClient = {
+    eventHandlers: {},
+    on: vi.fn((event, callback) => {
+        if (!mockSocketClient.eventHandlers[event]) {
+            mockSocketClient.eventHandlers[event] = [];
+        }
+        mockSocketClient.eventHandlers[event].push(callback);
+        return mockSocketClient;
+    }),
+    once: vi.fn((event, callback) => {
+        if (!mockSocketClient.eventHandlers[event]) {
+            mockSocketClient.eventHandlers[event] = [];
+        }
+        mockSocketClient.eventHandlers[event].push((...args) => {
+            callback(...args);
+            mockSocketClient.eventHandlers[event] = mockSocketClient.eventHandlers[event].filter(cb => cb !== callback);
+        });
+        return mockSocketClient;
+    }),
+    emit: vi.fn((event, ...args) => {
+        if (mockSocketClient.eventHandlers[event]) {
+            mockSocketClient.eventHandlers[event].forEach(callback => callback(...args));
+        }
+        return mockSocketClient;
+    }),
+    id: 'test-socket-id',
+    disconnect: vi.fn(),
+    close: vi.fn(),
+    join: vi.fn(),
+    to: vi.fn(() => ({
+        emit: vi.fn()
+    })),
+    connect: vi.fn(),
+    connected: true,
+    disconnected: false,
+    io: {
+        opts: {
+            transports: ['websocket']
+        }
+    }
+};
+
+// Mock Socket.IO server
+const mockSocketServer = {
+    eventHandlers: {},
+    on: vi.fn((event, callback) => {
+        if (!mockSocketServer.eventHandlers[event]) {
+            mockSocketServer.eventHandlers[event] = [];
+        }
+        mockSocketServer.eventHandlers[event].push(callback);
+        return mockSocketServer;
+    }),
+    once: vi.fn((event, callback) => {
+        if (!mockSocketServer.eventHandlers[event]) {
+            mockSocketServer.eventHandlers[event] = [];
+        }
+        mockSocketServer.eventHandlers[event].push((...args) => {
+            callback(...args);
+            mockSocketServer.eventHandlers[event] = mockSocketServer.eventHandlers[event].filter(cb => cb !== callback);
+        });
+        return mockSocketServer;
+    }),
+    emit: vi.fn((event, ...args) => {
+        if (mockSocketServer.eventHandlers[event]) {
+            mockSocketServer.eventHandlers[event].forEach(callback => callback(...args));
+        }
+        return mockSocketServer;
+    }),
+    to: vi.fn(() => ({
+        emit: vi.fn()
+    })),
+    close: vi.fn(),
+    join: vi.fn(),
+    sockets: {
+        adapter: {
+            rooms: new Map(),
+            sids: new Map()
+        }
+    }
+};
+
+// Mock io constructor
+global.io = vi.fn(() => mockSocketClient);
+
+// Mock Server constructor
+global.Server = vi.fn(() => mockSocketServer);
 
 // Mock canvas methods
 HTMLCanvasElement.prototype.getContext = vi.fn((type) => {
