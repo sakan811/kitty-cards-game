@@ -134,14 +134,22 @@ export class MainScene extends Phaser.Scene {
         console.log('Handling opponent action:', action, data);
         switch (action) {
             case 'drawCard':
-                if (data.deckType) {
+                if (data.deckType && data.handCount !== undefined) {
                     console.log(`Opponent drew a ${data.deckType} card`);
-                    this.updateOpponentStack(data.deckType, 1, true);
+                    // Use the handCount from server directly
+                    if (data.deckType === 'number') {
+                        this.opponentHand.numberStack.count = data.handCount;
+                    } else if (data.deckType === 'assist') {
+                        this.opponentHand.assistStack.count = data.handCount;
+                    }
+                    this.updateOpponentHand();
                 }
                 break;
             case 'playCard':
-                if (data.tileIndex !== undefined) {
-                    this.updateOpponentStack('number', -1, false);
+                if (data.tileIndex !== undefined && data.handCount !== undefined) {
+                    // Use handCount from server
+                    this.opponentHand.numberStack.count = data.handCount;
+                    this.updateOpponentHand();
                     const tile = this.tiles[data.tileIndex];
                     if (tile) {
                         tile.setNumber(data.cardValue);
@@ -149,7 +157,11 @@ export class MainScene extends Phaser.Scene {
                 }
                 break;
             case 'playAssistCard':
-                this.updateOpponentStack('assist', -1, false);
+                if (data.handCount !== undefined) {
+                    // Use handCount from server
+                    this.opponentHand.assistStack.count = data.handCount;
+                    this.updateOpponentHand();
+                }
                 break;
         }
     }
@@ -221,79 +233,98 @@ export class MainScene extends Phaser.Scene {
         ]);
     }
 
-    updateOpponentHand(cardCount) {
+    updateOpponentHand() {
         if (!this.opponentHand?.container) {
             console.error('Opponent hand container not initialized');
             return;
         }
         
-        console.log('Updating opponent hand display:', cardCount);
+        console.log('Updating opponent hand display:', {
+            numberCards: this.opponentHand.numberStack.count,
+            assistCards: this.opponentHand.assistStack.count
+        });
 
         // Remove old card backs
         this.opponentHand.numberStack.container.removeAll();
         this.opponentHand.assistStack.container.removeAll();
 
-        // Keep background and label
+        // Keep background and labels
         const background = this.opponentHand.container.list[0];
-        const label = this.opponentHand.container.list[1];
+        const mainLabel = this.opponentHand.container.list[1];
+        const numberLabel = this.opponentHand.container.list[2];
+        const assistLabel = this.opponentHand.container.list[3];
         this.opponentHand.container.removeAll();
-        this.opponentHand.container.add([background, label]);
-        
-        this.opponentHand.numberStack.count = cardCount;
-        this.opponentHand.assistStack.count = 0;
+        this.opponentHand.container.add([background, mainLabel, numberLabel, assistLabel]);
 
         // Constants for card layout
-        const cardWidth = CARD_DIMENSIONS.width * 0.7; // Make opponent cards slightly smaller
+        const cardWidth = CARD_DIMENSIONS.width * 0.7;
         const cardHeight = CARD_DIMENSIONS.height * 0.7;
         const cardSpacing = 30;
-        const maxVisibleCards = 10;
-        
-        // Calculate total width needed and starting position
-        const totalWidth = Math.min(cardCount, maxVisibleCards) * (cardWidth + cardSpacing) - cardSpacing;
-        const startX = -totalWidth / 2;
+        const maxVisibleCards = 5;
 
-        // Create face-down cards with animation for changes
-        for (let i = 0; i < cardCount; i++) {
-            const x = startX + i * (cardWidth + cardSpacing);
-            
-            // Create card back sprite using actual card back texture
-            const cardBack = this.add.sprite(x, 0, ASSET_KEYS.numberCard)
-                .setDisplaySize(cardWidth, cardHeight)
-                .setOrigin(0.5);
+        // Create number cards
+        const numberCount = this.opponentHand.numberStack.count;
+        if (numberCount > 0) {
+            const totalWidth = Math.min(numberCount, maxVisibleCards) * cardSpacing;
+            const startX = -150 - totalWidth / 2;
 
-            // Add shine effect on card back
-            const shine = this.add.graphics();
-            shine.lineStyle(2, 0xffffff, 0.5);
-            shine.lineBetween(x - cardWidth/3, -cardHeight/3, x + cardWidth/3, cardHeight/3);
-            
-            // Add to container and track
-            this.opponentHand.container.add([cardBack, shine]);
-        }
+            for (let i = 0; i < numberCount; i++) {
+                const x = startX + i * cardSpacing;
+                const cardBack = this.add.sprite(x, 0, ASSET_KEYS.numberCard)
+                    .setDisplaySize(cardWidth, cardHeight)
+                    .setOrigin(0.5);
+                this.opponentHand.numberStack.container.add(cardBack);
+            }
 
-        // Add card count text with background
-        if (cardCount > 0) {
-            const countBackground = this.add.rectangle(
-                0,
+            // Add count text for number cards
+            const numberCountText = this.add.text(
+                -150,
                 cardHeight/2 + 15,
-                80,
-                30,
-                0x000000,
-                0.6
-            ).setOrigin(0.5);
-
-            const countText = this.add.text(
-                0,
-                cardHeight/2 + 15,
-                `${cardCount} cards`,
+                `${numberCount}`,
                 {
                     fontSize: '16px',
                     color: '#ffffff',
-                    fontStyle: 'bold'
+                    backgroundColor: '#000000',
+                    padding: { x: 10, y: 5 }
                 }
             ).setOrigin(0.5);
-            
-            this.opponentHand.container.add([countBackground, countText]);
+            this.opponentHand.numberStack.container.add(numberCountText);
         }
+
+        // Create assist cards
+        const assistCount = this.opponentHand.assistStack.count;
+        if (assistCount > 0) {
+            const totalWidth = Math.min(assistCount, maxVisibleCards) * cardSpacing;
+            const startX = 150 - totalWidth / 2;
+
+            for (let i = 0; i < assistCount; i++) {
+                const x = startX + i * cardSpacing;
+                const cardBack = this.add.sprite(x, 0, ASSET_KEYS.assistCard)
+                    .setDisplaySize(cardWidth, cardHeight)
+                    .setOrigin(0.5);
+                this.opponentHand.assistStack.container.add(cardBack);
+            }
+
+            // Add count text for assist cards
+            const assistCountText = this.add.text(
+                150,
+                cardHeight/2 + 15,
+                `${assistCount}`,
+                {
+                    fontSize: '16px',
+                    color: '#ffffff',
+                    backgroundColor: '#000000',
+                    padding: { x: 10, y: 5 }
+                }
+            ).setOrigin(0.5);
+            this.opponentHand.assistStack.container.add(assistCountText);
+        }
+
+        // Add containers back to main container
+        this.opponentHand.container.add([
+            this.opponentHand.numberStack.container,
+            this.opponentHand.assistStack.container
+        ]);
     }
 
     preload() {
