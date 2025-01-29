@@ -119,30 +119,21 @@ export class LobbyScene extends Phaser.Scene {
     }
 
     setupSocketListeners() {
-        this.socket.on('roomCreated', ({ roomId, playerId }) => {
-            console.log('Room created:', roomId, 'Player ID:', playerId);
-            this.currentRoomId = roomId;
-            this.playerId = playerId;
-            this.showWaitingRoom([{ id: playerId, ready: false }]);
-            this.showCopyableCode(roomId);
-        });
-
-        this.socket.on('joinedRoom', ({ roomId, playerId, players }) => {
-            console.log('Joined room:', roomId, 'as player:', playerId);
-            this.currentRoomId = roomId;
-            this.playerId = playerId;
-            this.showWaitingRoom(players);
-        });
-
-        this.socket.on('playerJoined', ({ roomId, players }) => {
-            console.log('Player joined. Current players:', players);
-            if (this.currentRoomId === roomId) {
-                this.showWaitingRoom(players);
-            }
-        });
+        this.socket.on('roomCreated', this.handleRoomCreated.bind(this));
+        this.socket.on('joinedRoom', this.handleJoinedRoom.bind(this));
+        this.socket.on('playerJoined', this.handlePlayerJoined.bind(this));
+        this.socket.on('roomError', this.handleRoomError.bind(this));
 
         this.socket.on('playerReady', ({ roomId, players }) => {
-            console.log('Player ready update:', players);
+            console.log('Player ready update received:', {
+                roomId,
+                currentRoomId: this.currentRoomId,
+                players: players.map(p => ({
+                    id: p.id,
+                    ready: p.ready,
+                    isCurrentPlayer: p.id === this.playerId
+                }))
+            });
             if (this.currentRoomId === roomId) {
                 this.updatePlayerStatus(players);
             }
@@ -160,11 +151,6 @@ export class LobbyScene extends Phaser.Scene {
                     currentTurn
                 });
             }
-        });
-
-        this.socket.on('roomError', (error) => {
-            console.error('Room error:', error);
-            this.showError(error);
         });
 
         this.socket.on('playerLeft', ({ roomId, players }) => {
@@ -226,36 +212,66 @@ export class LobbyScene extends Phaser.Scene {
         // Clear existing content
         this.waitingContainer.removeAll();
 
-        // Show room code if you're the host
+        // Background for waiting room
+        const bg = this.add.rectangle(0, 0, 800, 600, 0xf0f0f0).setOrigin(0);
+        this.waitingContainer.add(bg);
+
+        // Show room code section
         if (this.playerId === players[0].id) {
-            const titleText = this.add.text(400, 100, 'Share this room code:', {
+            const titleText = this.add.text(400, 100, `Room Code: ${this.currentRoomId}`, {
                 fontSize: '24px',
-                color: '#000'
+                color: '#000',
+                fontStyle: 'bold'
             }).setOrigin(0.5);
             this.waitingContainer.add(titleText);
+            this.showCopyableCode(this.currentRoomId);
         } else {
             const titleText = this.add.text(400, 100, `Room Code: ${this.currentRoomId}`, {
                 fontSize: '24px',
-                color: '#000'
+                color: '#000',
+                fontStyle: 'bold'
             }).setOrigin(0.5);
             this.waitingContainer.add(titleText);
         }
 
-        // Show players
-        const playersList = this.add.text(400, 250, 'Players:', {
-            fontSize: '20px',
-            color: '#000'
+        // Create player status container
+        const statusContainer = this.add.container(400, 300);
+        
+        // Add "Players:" header
+        const playersHeader = this.add.text(0, -60, 'Players:', {
+            fontSize: '24px',
+            color: '#000',
+            fontStyle: 'bold'
         }).setOrigin(0.5);
-        this.waitingContainer.add(playersList);
+        
+        // Create status boxes for both players
+        const myStatusBox = this.add.rectangle(-100, 0, 180, 80, 0xffffff);
+        const opponentStatusBox = this.add.rectangle(100, 0, 180, 80, 0xffffff);
+        
+        // Initialize statusText object
+        this.statusText = {
+            playerStatus: this.add.text(-100, 0, 'Not Ready', {
+                fontSize: '20px',
+                color: '#ff0000'
+            }).setOrigin(0.5),
+            opponentStatus: this.add.text(100, 0, 'Waiting...', {
+                fontSize: '20px',
+                color: '#666666'
+            }).setOrigin(0.5)
+        };
 
-        // Add status text
-        this.statusText = this.add.text(400, 300, '', {
-            fontSize: '20px',
-            color: '#666'
-        }).setOrigin(0.5);
-        this.waitingContainer.add(this.statusText);
+        // Add all elements to the status container
+        statusContainer.add([
+            playersHeader,
+            myStatusBox,
+            opponentStatusBox,
+            this.statusText.playerStatus,
+            this.statusText.opponentStatus
+        ]);
 
-        // Add ready button
+        this.waitingContainer.add(statusContainer);
+
+        // Add ready button below status boxes
         this.readyButton = this.add.rectangle(400, 400, 200, 50, 0x4CAF50);
         const readyText = this.add.text(400, 400, 'Ready', {
             fontSize: '24px',
@@ -270,6 +286,7 @@ export class LobbyScene extends Phaser.Scene {
             this.readyButton.setFillStyle(0x666666);
             this.readyButton.disableInteractive();
             readyText.disableInteractive();
+            readyText.setText('Waiting for opponent...');
         };
 
         this.readyButton.on('pointerdown', onReady);
@@ -281,16 +298,51 @@ export class LobbyScene extends Phaser.Scene {
     }
 
     updatePlayerStatus(players) {
+        console.log('Updating player status:', {
+            players: players.map(p => ({
+                id: p.id,
+                ready: p.ready,
+                isCurrentPlayer: p.id === this.playerId
+            })),
+            hasStatusText: !!this.statusText,
+            hasReadyButton: !!this.readyButton
+        });
+        
         if (!this.statusText) return;
 
-        const myStatus = players.find(p => p.id === this.playerId)?.ready ? 'Ready' : 'Not Ready';
+        const myPlayer = players.find(p => p.id === this.playerId);
         const otherPlayer = players.find(p => p.id !== this.playerId);
-        const otherStatus = otherPlayer ? (otherPlayer.ready ? 'Ready' : 'Not Ready') : 'Waiting for player...';
 
-        this.statusText.setText([
-            `You: ${myStatus}`,
-            `Other Player: ${otherStatus}`
-        ]);
+        // Update player status
+        if (myPlayer) {
+            this.statusText.playerStatus
+                .setText(myPlayer.ready ? 'Ready' : 'Not Ready')
+                .setStyle({ color: myPlayer.ready ? '#00aa00' : '#ff0000' });
+            
+            // Update ready button state based on player's ready status
+            if (this.readyButton && myPlayer.ready) {
+                this.readyButton.setFillStyle(0x666666);
+                this.readyButton.disableInteractive();
+                // Find and update the ready text
+                this.waitingContainer.list.forEach(child => {
+                    if (child.type === 'Text' && child.text === 'Ready') {
+                        child.setText('Waiting for opponent...');
+                        child.disableInteractive();
+                    }
+                });
+            }
+        }
+
+        // Update opponent status
+        if (otherPlayer) {
+            this.statusText.opponentStatus
+                .setText(otherPlayer.ready ? 'Ready' : 'Not Ready')
+                .setStyle({ color: otherPlayer.ready ? '#00aa00' : '#ff0000' });
+        } else {
+            this.statusText.opponentStatus
+                .setText('Waiting...')
+                .setStyle({ color: '#666666' });
+        }
     }
 
     waitForPlayer() {
@@ -322,5 +374,36 @@ export class LobbyScene extends Phaser.Scene {
         this.time.delayedCall(2000, () => {
             messageText.destroy();
         });
+    }
+
+    handleRoomCreated({ roomId, playerId }) {
+        console.log('Room created:', roomId, 'Player ID:', playerId);
+        this.currentRoomId = roomId;
+        this.playerId = playerId;
+        this.showWaitingRoom([{ id: playerId, ready: false }]);
+        this.showCopyableCode(roomId);
+    }
+
+    handleJoinedRoom({ roomId, playerId, players }) {
+        console.log('Joined room:', roomId, 'as player:', playerId);
+        this.currentRoomId = roomId;
+        this.playerId = playerId;
+        this.showWaitingRoom(players);
+        this.scene.start('MainScene', { socket: this.socket });
+    }
+
+    handlePlayerJoined({ roomId, players }) {
+        console.log('Player joined. Current players:', players);
+        if (this.currentRoomId === roomId) {
+            this.showWaitingRoom(players);
+            if (players.every(p => p.ready)) {
+                this.scene.start('MainScene', { socket: this.socket });
+            }
+        }
+    }
+
+    handleRoomError(error) {
+        console.error('Room error:', error);
+        this.showError(error);
     }
 } 
