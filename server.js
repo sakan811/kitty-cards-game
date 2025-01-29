@@ -65,7 +65,11 @@ io.on('connection', (socket) => {
     const roomId = uuidv4();
     const room = {
       id: roomId,
-      players: [{ id: socket.id, ready: false }],
+      players: [{
+        id: socket.id,
+        ready: false,
+        hand: []
+      }],
       status: 'waiting',
       hostId: socket.id,
       currentTurn: null,
@@ -101,7 +105,11 @@ io.on('connection', (socket) => {
       return;
     }
 
-    room.players.push({ id: socket.id, ready: false });
+    room.players.push({
+      id: socket.id,
+      ready: false,
+      hand: []
+    });
     socket.join(roomId);
     
     socket.emit('joinedRoom', {
@@ -154,9 +162,23 @@ io.on('connection', (socket) => {
       // Start the game
       io.to(roomId).emit('gameStart', {
         roomId,
-        players: room.players.map(p => ({ id: p.id })),
+        players: room.players.map(p => ({
+          id: p.id,
+          handCount: p.hand.length
+        })),
         gameState: room.gameState,
         currentTurn: room.gameState.currentPlayer
+      });
+      
+      // Send initial hand counts to each player
+      room.players.forEach(player => {
+        const opponent = room.players.find(p => p.id !== player.id);
+        if (opponent) {
+          io.to(player.id).emit('opponentHandUpdate', {
+            roomId,
+            handCount: opponent.hand.length
+          });
+        }
       });
       
       console.log(`Game starting in room ${roomId}`);
@@ -190,16 +212,45 @@ io.on('connection', (socket) => {
           if (!tile.hasNumber) {
             tile.hasNumber = true;
             tile.number = data.cardValue;
-            // Update score if needed
-            if (tile.hasCup) {
-              room.gameState.scores[socket.id] += data.cardValue;
+            // Remove card from hand
+            player.hand = player.hand.filter(card => card.value !== data.cardValue);
+            
+            // Notify opponent
+            const opponent = room.players.find(p => p.id !== socket.id);
+            if (opponent) {
+              io.to(opponent.id).emit('opponentAction', {
+                action: 'playCard',
+                data: {
+                  tileIndex: data.tileIndex,
+                  cardValue: data.cardValue,
+                  deckType: 'number'
+                }
+              });
             }
           }
         }
         break;
       
       case 'drawCard':
-        // Handle card drawing
+        if (data.deckType) {
+          const newCard = {
+            type: data.deckType,
+            value: data.cardValue
+          };
+          player.hand.push(newCard);
+          
+          // Notify opponent immediately about the draw
+          const opponent = room.players.find(p => p.id !== socket.id);
+          if (opponent) {
+            io.to(opponent.id).emit('opponentAction', {
+              action: 'drawCard',
+              data: {
+                deckType: data.deckType,
+                handCount: player.hand.length
+              }
+            });
+          }
+        }
         break;
     }
 
@@ -208,7 +259,10 @@ io.on('connection', (socket) => {
       roomId,
       playerId: socket.id, 
       action, 
-      data,
+      data: {
+        ...data,
+        handCount: player.hand.length
+      },
       gameState: room.gameState
     });
 
@@ -269,3 +323,16 @@ app.get('*', (req, res) => {
 httpServer.listen(port, () => {
   console.log(`Game server running at http://localhost:${port}`);
 }); 
+
+// Add specific handler for when cards are drawn/played
+function updateOpponentHandCount(room, playerId) {
+    const player = room.players.find(p => p.id === playerId);
+    const opponent = room.players.find(p => p.id !== playerId);
+    
+    if (player && opponent) {
+        io.to(opponent.id).emit('opponentHandUpdate', {
+            roomId: room.id,
+            handCount: player.hand ? player.hand.length : 0
+        });
+    }
+} 
