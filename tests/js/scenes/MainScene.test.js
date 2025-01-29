@@ -91,34 +91,63 @@ describe('MainScene', () => {
     });
 
     describe('Game Actions', () => {
-        it('should handle opponent card played', () => {
+        test('should handle opponent card played', () => {
+            const scene = new MainScene();
+            scene.tiles = [{ setNumber: vi.fn() }];
+            scene.opponentHand = {
+                numberStack: { count: 3 },
+                assistStack: { count: 0 }
+            };
+            scene.updateOpponentHand = vi.fn();
+
             const cardData = {
                 tileIndex: 0,
                 cardValue: 5,
-                deckType: 'number'
+                handCount: 2  // Server reports one less card after playing
             };
-            
+
             scene.handleOpponentAction('playCard', cardData);
-            
+
             expect(scene.tiles[0].setNumber).toHaveBeenCalledWith(5);
-            expect(scene.updateOpponentStack).toHaveBeenCalledWith('number', -1, false);
+            expect(scene.opponentHand.numberStack.count).toBe(2);
+            expect(scene.updateOpponentHand).toHaveBeenCalled();
         });
 
-        it('should handle opponent drawing a card', () => {
+        test('should handle opponent drawing a number card', () => {
+            const scene = new MainScene();
+            scene.opponentHand = {
+                numberStack: { count: 2 },
+                assistStack: { count: 0 }
+            };
+            scene.updateOpponentHand = vi.fn();
+
             const drawData = {
                 deckType: 'number',
-                handCount: 1
+                handCount: 3  // Server reports new total
             };
 
             scene.handleOpponentAction('drawCard', drawData);
 
-            expect(scene.updateOpponentStack).toHaveBeenCalledWith('number', 1, true);
+            expect(scene.opponentHand.numberStack.count).toBe(3);
+            expect(scene.updateOpponentHand).toHaveBeenCalled();
         });
 
-        it('should handle opponent playing assist card', () => {
-            scene.handleOpponentAction('playAssistCard', {});
+        test('should handle opponent playing assist card', () => {
+            const scene = new MainScene();
+            scene.opponentHand = {
+                numberStack: { count: 2 },
+                assistStack: { count: 2 }
+            };
+            scene.updateOpponentHand = vi.fn();
 
-            expect(scene.updateOpponentStack).toHaveBeenCalledWith('assist', -1, false);
+            const assistData = {
+                handCount: 1  // Server reports one less assist card
+            };
+
+            scene.handleOpponentAction('playAssistCard', assistData);
+
+            expect(scene.opponentHand.assistStack.count).toBe(1);
+            expect(scene.updateOpponentHand).toHaveBeenCalled();
         });
 
         it('should emit game action when playing a card', () => {
