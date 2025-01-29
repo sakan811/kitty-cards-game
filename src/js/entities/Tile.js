@@ -1,14 +1,22 @@
+import { ASSET_KEYS } from '../config/constants.js';
+
 export class Tile {
-    constructor(scene, x, y, size, color) {
+    constructor(scene, x, y, size, assetKey) {
         this.scene = scene;
         this.size = size;
         this.score = 0;
         this.hasNumber = false;
-        this.createVisual(x, y, color);
+        this.createVisual(x, y, assetKey || ASSET_KEYS.cupWhite);
     }
 
-    createVisual(x, y, color) {
-        this.sprite = this.scene.add.image(x, y, color)
+    createVisual(x, y, assetKey) {
+        console.log('Creating tile with asset key:', assetKey);
+        if (!this.scene.textures.exists(assetKey)) {
+            console.error('Missing texture for asset key:', assetKey);
+            assetKey = ASSET_KEYS.cupWhite; // Fallback to white cup
+        }
+        
+        this.sprite = this.scene.add.image(x, y, assetKey)
             .setDisplaySize(this.size, this.size)
             .setOrigin(0.5, 0.5)
             .setInteractive()
@@ -16,6 +24,16 @@ export class Tile {
             .setData('score', 0);
 
         this.scoreText = null;
+    }
+
+    setNumber(value) {
+        if (this.hasNumber) return;
+        
+        this.hasNumber = true;
+        const points = parseInt(value);
+        if (!isNaN(points)) {
+            this.updateScore(points);
+        }
     }
 
     applyCard(card) {
@@ -28,7 +46,7 @@ export class Tile {
         let points = cardValue;
 
         // Calculate points based on color matching
-        if (cupColor === 'cup-white') {
+        if (cupColor === ASSET_KEYS.cupWhite) {
             points = cardValue;
         } else if (card.frontSprite?.getData('matchingCup') === cupColor) {
             points = cardValue * 2;
