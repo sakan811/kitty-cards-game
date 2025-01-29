@@ -6,7 +6,7 @@
   "scripts": {
     "test": "vitest",
     "start": "node server.js",
-    "start:dev": "NODE_ENV=development node server.js"
+    "start:dev": "cross-env NODE_ENV=development node server.js"
   },
   "author": "",
   "license": "ISC",
@@ -20,6 +20,7 @@
     "uuid": "^11.0.5"
   },
   "devDependencies": {
+    "cross-env": "^7.0.3",
     "jsdom": "^26.0.0",
     "vitest": "^3.0.4"
   }
