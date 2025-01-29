@@ -389,16 +389,12 @@ export class LobbyScene extends Phaser.Scene {
         this.currentRoomId = roomId;
         this.playerId = playerId;
         this.showWaitingRoom(players);
-        this.scene.start('MainScene', { socket: this.socket });
     }
 
     handlePlayerJoined({ roomId, players }) {
         console.log('Player joined. Current players:', players);
         if (this.currentRoomId === roomId) {
             this.showWaitingRoom(players);
-            if (players.every(p => p.ready)) {
-                this.scene.start('MainScene', { socket: this.socket });
-            }
         }
     }
 
