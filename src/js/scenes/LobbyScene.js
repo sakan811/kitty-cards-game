@@ -5,6 +5,10 @@ export class LobbyScene extends Phaser.Scene {
         this.roomInput = null;
         this.mainContainer = null;
         this.waitingContainer = null;
+        this.currentRoomId = null;
+        this.playerId = null;
+        this.readyButton = null;
+        this.statusText = null;
     }
 
     init() {
@@ -115,26 +119,62 @@ export class LobbyScene extends Phaser.Scene {
     }
 
     setupSocketListeners() {
-        this.socket.on('roomCreated', (roomId) => {
-            this.showRoomCode(roomId);
+        this.socket.on('roomCreated', ({ roomId, playerId }) => {
+            console.log('Room created:', roomId, 'Player ID:', playerId);
+            this.currentRoomId = roomId;
+            this.playerId = playerId;
+            this.showWaitingRoom([{ id: playerId, ready: false }]);
+            this.showCopyableCode(roomId);
         });
 
-        this.socket.on('joinedRoom', (roomId) => {
-            console.log('Joined room:', roomId);
-            this.scene.start('MainScene', { socket: this.socket });
+        this.socket.on('joinedRoom', ({ roomId, playerId, players }) => {
+            console.log('Joined room:', roomId, 'as player:', playerId);
+            this.currentRoomId = roomId;
+            this.playerId = playerId;
+            this.showWaitingRoom(players);
         });
 
-        this.socket.on('playerJoined', (players) => {
-            console.log('Player joined, total players:', players.length);
-            if (players.length === 2) {
-                console.log('Starting game...');
-                this.scene.start('MainScene', { socket: this.socket });
+        this.socket.on('playerJoined', ({ roomId, players }) => {
+            console.log('Player joined. Current players:', players);
+            if (this.currentRoomId === roomId) {
+                this.showWaitingRoom(players);
+            }
+        });
+
+        this.socket.on('playerReady', ({ roomId, players }) => {
+            console.log('Player ready update:', players);
+            if (this.currentRoomId === roomId) {
+                this.updatePlayerStatus(players);
+            }
+        });
+
+        this.socket.on('gameStart', ({ roomId, players, gameState, currentTurn }) => {
+            console.log('Game starting:', { roomId, players, gameState, currentTurn });
+            if (this.currentRoomId === roomId) {
+                this.scene.start('MainScene', { 
+                    socket: this.socket,
+                    roomId: this.currentRoomId,
+                    playerId: this.playerId,
+                    players,
+                    gameState,
+                    currentTurn
+                });
             }
         });
 
         this.socket.on('roomError', (error) => {
             console.error('Room error:', error);
             this.showError(error);
+        });
+
+        this.socket.on('playerLeft', ({ roomId, players }) => {
+            if (this.currentRoomId === roomId) {
+                this.showError('Other player left the game');
+                // Optional: Return to main menu after delay
+                this.time.delayedCall(3000, () => {
+                    window.location.reload();
+                });
+            }
         });
 
         this.socket.on('connect_error', (error) => {
@@ -147,13 +187,7 @@ export class LobbyScene extends Phaser.Scene {
         this.socket.emit('createRoom');
     }
 
-    showRoomCode(roomId) {
-        // Hide main container
-        this.mainContainer.setVisible(false);
-        
-        // Show waiting container
-        this.waitingContainer.setVisible(true);
-
+    showCopyableCode(roomId) {
         // Create a copyable input for the room code
         const codeInput = document.createElement('input');
         codeInput.type = 'text';
@@ -176,25 +210,87 @@ export class LobbyScene extends Phaser.Scene {
             this.showMessage('Room code copied!');
         };
 
-        // Add the elements to the waiting container
-        const titleText = this.add.text(400, 200, 'Your Room Code:', {
-            fontSize: '24px',
-            color: '#000'
-        }).setOrigin(0.5);
-
-        const codeElement = this.add.dom(400, 250, codeInput);
-
-        const instructionText = this.add.text(400, 300, 'Click the code to copy it!', {
+        const codeElement = this.add.dom(400, 150, codeInput);
+        const instructionText = this.add.text(400, 200, 'Click the code to copy it!', {
             fontSize: '18px',
             color: '#666'
         }).setOrigin(0.5);
 
-        const waitingText = this.add.text(400, 400, 'Waiting for another player...', {
-            fontSize: '24px',
+        this.waitingContainer.add([codeElement, instructionText]);
+    }
+
+    showWaitingRoom(players) {
+        this.mainContainer.setVisible(false);
+        this.waitingContainer.setVisible(true);
+        
+        // Clear existing content
+        this.waitingContainer.removeAll();
+
+        // Show room code if you're the host
+        if (this.playerId === players[0].id) {
+            const titleText = this.add.text(400, 100, 'Share this room code:', {
+                fontSize: '24px',
+                color: '#000'
+            }).setOrigin(0.5);
+            this.waitingContainer.add(titleText);
+        } else {
+            const titleText = this.add.text(400, 100, `Room Code: ${this.currentRoomId}`, {
+                fontSize: '24px',
+                color: '#000'
+            }).setOrigin(0.5);
+            this.waitingContainer.add(titleText);
+        }
+
+        // Show players
+        const playersList = this.add.text(400, 250, 'Players:', {
+            fontSize: '20px',
+            color: '#000'
+        }).setOrigin(0.5);
+        this.waitingContainer.add(playersList);
+
+        // Add status text
+        this.statusText = this.add.text(400, 300, '', {
+            fontSize: '20px',
             color: '#666'
         }).setOrigin(0.5);
+        this.waitingContainer.add(this.statusText);
 
-        this.waitingContainer.add([titleText, codeElement, instructionText, waitingText]);
+        // Add ready button
+        this.readyButton = this.add.rectangle(400, 400, 200, 50, 0x4CAF50);
+        const readyText = this.add.text(400, 400, 'Ready', {
+            fontSize: '24px',
+            color: '#fff'
+        }).setOrigin(0.5);
+
+        this.readyButton.setInteractive({ useHandCursor: true });
+        readyText.setInteractive({ useHandCursor: true });
+
+        const onReady = () => {
+            this.socket.emit('playerReady', this.currentRoomId);
+            this.readyButton.setFillStyle(0x666666);
+            this.readyButton.disableInteractive();
+            readyText.disableInteractive();
+        };
+
+        this.readyButton.on('pointerdown', onReady);
+        readyText.on('pointerdown', onReady);
+
+        this.waitingContainer.add([this.readyButton, readyText]);
+        
+        this.updatePlayerStatus(players);
+    }
+
+    updatePlayerStatus(players) {
+        if (!this.statusText) return;
+
+        const myStatus = players.find(p => p.id === this.playerId)?.ready ? 'Ready' : 'Not Ready';
+        const otherPlayer = players.find(p => p.id !== this.playerId);
+        const otherStatus = otherPlayer ? (otherPlayer.ready ? 'Ready' : 'Not Ready') : 'Waiting for player...';
+
+        this.statusText.setText([
+            `You: ${myStatus}`,
+            `Other Player: ${otherStatus}`
+        ]);
     }
 
     waitForPlayer() {
