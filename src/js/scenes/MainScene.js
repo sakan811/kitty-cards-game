@@ -8,9 +8,83 @@ import { Card } from '../entities/Card.js';
 export class MainScene extends Phaser.Scene {
     constructor() {
         super({ key: 'MainScene' });
+        this.socket = null;
         this.selectedCard = null;
         this.totalPoints = 0;
         this.pointsText = null;
+        this.isPlayerTurn = false;
+        this.playerId = null;
+        this.opponentId = null;
+    }
+
+    init(data) {
+        console.log('MainScene init with data:', data);
+        if (data && data.socket) {
+            this.socket = data.socket;
+            this.setupSocketListeners();
+        } else {
+            console.error('No socket provided to MainScene');
+        }
+    }
+
+    setupSocketListeners() {
+        if (!this.socket) {
+            console.error('Cannot setup listeners: Socket not initialized');
+            return;
+        }
+
+        this.socket.on('gameStart', () => {
+            console.log('Game starting...');
+            this.startGame();
+        });
+
+        this.socket.on('gameUpdate', ({ playerId, action, data }) => {
+            console.log('Game update:', { playerId, action, data });
+            if (playerId !== this.socket.id) {
+                this.handleOpponentAction(action, data);
+            }
+        });
+
+        this.socket.on('playerLeft', () => {
+            this.showGameOver('Opponent left the game');
+        });
+    }
+
+    handleOpponentAction(action, data) {
+        switch (action) {
+            case 'cardPlayed':
+                this.handleOpponentCardPlayed(data);
+                break;
+            case 'cardDrawn':
+                this.handleOpponentCardDrawn();
+                break;
+            // Add more actions as needed
+        }
+    }
+
+    handleOpponentCardPlayed(cardData) {
+        // Create a sprite for the opponent's played card
+        const sprite = this.add.sprite(cardData.x, cardData.y, 'card')
+            .setOrigin(0.5)
+            .setInteractive();
+        
+        // Add any additional card properties/animations here
+    }
+
+    handleOpponentCardDrawn() {
+        // Update opponent's hand visualization
+        // Show card draw animation
+    }
+
+    createOpponentHand() {
+        // Create face-down cards for opponent's hand
+        this.opponentCards = [];
+        // Position cards at the top of the screen
+        // Cards should be face down
+    }
+
+    updateOpponentHand(numCards) {
+        // Update the number of face-down cards shown for opponent
     }
 
     preload() {
@@ -189,19 +263,22 @@ export class MainScene extends Phaser.Scene {
     }
 
     onCardClick(card) {
-        if (this.selectedCard === card) {
-            this.selectedCard = null;
+        if (!this.isPlayerTurn) {
             card.deselect();
             card.lower();
-        } else {
-            if (this.selectedCard) {
-                this.selectedCard.deselect();
-                this.selectedCard.lower();
-            }
-            this.selectedCard = card;
-            card.select();
-            card.lift();
+            return;
         }
+
+        const cardData = card.getData();
+        this.socket.emit('gameAction', {
+            action: 'cardPlayed',
+            data: {
+                type: cardData.type,
+                value: cardData.value,
+                x: cardData.x || 400,
+                y: cardData.y || 300
+            }
+        });
     }
 
     activateByeByeCard(card) {
@@ -413,24 +490,25 @@ export class MainScene extends Phaser.Scene {
 
     disableAllInteractions() {
         // Disable hand cards
-        this.hand.cards.forEach(c => {
-            c.frontSprite?.removeInteractive();
-            c.backSprite?.removeInteractive();
-        });
+        if (this.hand?.cards) {
+            this.hand.cards.forEach(c => {
+                c.frontSprite?.removeInteractive();
+                c.backSprite?.removeInteractive();
+            });
+        }
 
-        // Disable deck interactions
-        Object.values(this.decks).forEach(deck => {
-            deck.visual?.removeInteractive();
-        });
+        // Disable decks
+        if (this.decks) {
+            Object.values(this.decks).forEach(deck => {
+                deck.visual?.removeInteractive();
+            });
+        }
 
-        // Disable tile interactions
-        this.tiles.forEach(tile => {
-            tile.sprite?.removeInteractive();
-        });
-
-        // Disable discard pile interactions if any
-        if (this.discardPile.visual) {
-            this.discardPile.visual.removeInteractive();
+        // Disable tiles
+        if (this.tiles) {
+            this.tiles.forEach(tile => {
+                tile.sprite?.removeInteractive();
+            });
         }
     }
 
@@ -474,18 +552,12 @@ export class MainScene extends Phaser.Scene {
     }
 
     gameOver() {
-        // Create semi-transparent overlay
-        const overlay = this.add.rectangle(
-            0, 0,
-            this.scale.width,
-            this.scale.height,
-            0x000000, 0.7
-        ).setOrigin(0).setDepth(2000);
-
-        // Create game over text
+        this.disableAllInteractions();
+        
+        // Add game over text in the center of the screen
         const gameOverText = this.add.text(
-            this.scale.width/2,
-            this.scale.height/2 - 50,
+            this.scale.width / 2,
+            this.scale.height / 2,
             'Game Over!',
             {
                 fontSize: '48px',
@@ -523,5 +595,34 @@ export class MainScene extends Phaser.Scene {
         .on('pointerdown', () => {
             this.scene.restart();
         });
+    }
+
+    startTurn() {
+        this.isPlayerTurn = true;
+        // Enable interactions
+        // Show turn indicator
+    }
+
+    endTurn() {
+        this.isPlayerTurn = false;
+        // Disable interactions
+        // Update turn indicator
+    }
+
+    showGameOver(message) {
+        this.disableAllInteractions();
+        
+        // Add game over text in the center of the screen
+        const gameOverText = this.add.text(
+            this.scale.width / 2,
+            this.scale.height / 2,
+            message,
+            {
+                fontSize: '32px',
+                fill: '#000000',
+                backgroundColor: '#ffffff',
+                padding: { x: 20, y: 10 }
+            }
+        ).setOrigin(0.5);
     }
 } 
