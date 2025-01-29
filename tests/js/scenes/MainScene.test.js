@@ -17,16 +17,25 @@ describe('MainScene', () => {
         scene = new MainScene();
         scene.socket = mockSocket;
         scene.add = {
-            text: vi.fn(() => ({
-                setOrigin: vi.fn().mockReturnThis(),
-                setStyle: vi.fn().mockReturnThis()
+            sprite: vi.fn(),
+            container: vi.fn(() => ({
+                add: vi.fn(),
+                removeAll: vi.fn()
             })),
-            sprite: vi.fn(() => ({
-                setOrigin: vi.fn().mockReturnThis(),
-                setInteractive: vi.fn().mockReturnThis()
-            }))
+            rectangle: vi.fn(() => ({
+                setAlpha: vi.fn().mockReturnThis()
+            })),
+            text: vi.fn(() => ({
+                setOrigin: vi.fn().mockReturnThis()
+            })),
+            graphics: vi.fn()
         };
-        scene.tiles = [];
+        scene.tweens = {
+            add: vi.fn()
+        };
+        scene.tiles = [{
+            setNumber: vi.fn()
+        }];
         scene.decks = {
             playerDeck: {
                 visual: {
@@ -38,6 +47,23 @@ describe('MainScene', () => {
         scene.enableAllInteractions = vi.fn();
         scene.disableAllInteractions = vi.fn();
         scene.setupSocketListeners();
+        scene.opponentHand = {
+            numberStack: {
+                container: {
+                    removeAll: vi.fn(),
+                    add: vi.fn()
+                },
+                count: 0
+            },
+            assistStack: {
+                container: {
+                    removeAll: vi.fn(),
+                    add: vi.fn()
+                },
+                count: 0
+            }
+        };
+        scene.updateOpponentStack = vi.fn();
     });
 
     afterEach(() => {
@@ -67,19 +93,32 @@ describe('MainScene', () => {
     describe('Game Actions', () => {
         it('should handle opponent card played', () => {
             const cardData = {
-                x: 400,
-                y: 300,
-                value: 5
+                tileIndex: 0,
+                cardValue: 5,
+                deckType: 'number'
             };
             
-            scene.handleOpponentAction('cardPlayed', cardData);
+            scene.handleOpponentAction('playCard', cardData);
             
-            expect(scene.add.sprite).toHaveBeenCalledWith(
-                cardData.x,
-                cardData.y,
-                'card'
-            );
-            console.log('Handling opponent action:', 'cardPlayed', cardData);
+            expect(scene.tiles[0].setNumber).toHaveBeenCalledWith(5);
+            expect(scene.updateOpponentStack).toHaveBeenCalledWith('number', -1, false);
+        });
+
+        it('should handle opponent drawing a card', () => {
+            const drawData = {
+                deckType: 'number',
+                handCount: 1
+            };
+
+            scene.handleOpponentAction('drawCard', drawData);
+
+            expect(scene.updateOpponentStack).toHaveBeenCalledWith('number', 1, true);
+        });
+
+        it('should handle opponent playing assist card', () => {
+            scene.handleOpponentAction('playAssistCard', {});
+
+            expect(scene.updateOpponentStack).toHaveBeenCalledWith('assist', -1, false);
         });
 
         it('should emit game action when playing a card', () => {
