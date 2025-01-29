@@ -1,157 +1,223 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LobbyScene } from '../../../src/js/scenes/LobbyScene';
 
-// Mock Socket.IO
-const mockSocket = {
-    on: vi.fn(),
-    emit: vi.fn(),
-};
-
-// Mock global io function
-global.io = vi.fn(() => mockSocket);
-
 describe('LobbyScene', () => {
     let scene;
+    let mockSocket;
 
     beforeEach(() => {
-        // Reset all mocks
         vi.clearAllMocks();
         
-        // Create a new scene instance
+        // Mock socket
+        mockSocket = {
+            on: vi.fn(),
+            emit: vi.fn(),
+            id: 'test-socket-id'
+        };
+
+        // Mock global.io
+        global.io = vi.fn(() => mockSocket);
+
+        // Create scene with mocked Phaser functionality
         scene = new LobbyScene();
+
+        // Mock containers that are created in create()
+        scene.mainContainer = {
+            setVisible: vi.fn(),
+            add: vi.fn()
+        };
+        
+        scene.waitingContainer = {
+            setVisible: vi.fn(),
+            add: vi.fn(),
+            removeAll: vi.fn(),
+            list: []
+        };
         
         // Mock Phaser.Scene methods and properties
         scene.add = {
-            container: vi.fn(() => ({
-                add: vi.fn(),
-                setVisible: vi.fn(),
-                setPosition: vi.fn()
-            })),
-            rectangle: vi.fn(() => ({
-                setOrigin: vi.fn().mockReturnThis(),
-                setInteractive: vi.fn().mockReturnThis(),
-                on: vi.fn(),
-                setAlpha: vi.fn()
-            })),
             text: vi.fn(() => ({
                 setOrigin: vi.fn().mockReturnThis(),
                 setStyle: vi.fn().mockReturnThis(),
-                setPosition: vi.fn().mockReturnThis(),
                 setInteractive: vi.fn().mockReturnThis(),
-                on: vi.fn(),
-                setText: vi.fn()
+                disableInteractive: vi.fn().mockReturnThis(),
+                setText: vi.fn().mockReturnThis(),
+                destroy: vi.fn().mockReturnThis(),
+                on: vi.fn().mockReturnThis()
+            })),
+            container: vi.fn(() => scene.waitingContainer),
+            rectangle: vi.fn(() => ({
+                setOrigin: vi.fn().mockReturnThis(),
+                setInteractive: vi.fn().mockReturnThis(),
+                setFillStyle: vi.fn().mockReturnThis(),
+                disableInteractive: vi.fn().mockReturnThis(),
+                on: vi.fn().mockReturnThis(),
+                setAlpha: vi.fn().mockReturnThis()
             })),
             dom: vi.fn(() => ({
                 setOrigin: vi.fn().mockReturnThis(),
-                setPosition: vi.fn().mockReturnThis(),
-                addListener: vi.fn(),
-                setInteractive: vi.fn().mockReturnThis()
+                node: { value: 'test-room' }
             }))
         };
-        scene.time = {
-            delayedCall: vi.fn()
-        };
+
         scene.scene = {
             start: vi.fn()
         };
-        scene.scale = {
-            width: 800,
-            height: 600
+
+        scene.time = {
+            delayedCall: vi.fn()
         };
+
+        // Initialize scene
+        scene.init();
     });
 
     afterEach(() => {
         vi.clearAllMocks();
     });
 
-    it('should initialize with correct properties', () => {
-        expect(scene.socket).toBeNull();
-        expect(scene.roomInput).toBeNull();
-        expect(scene.mainContainer).toBeNull();
-        expect(scene.waitingContainer).toBeNull();
+    describe('Socket Connection', () => {
+        it('should connect to socket server on init', () => {
+            expect(global.io).toHaveBeenCalledWith('http://localhost:3000');
+            expect(scene.socket).toBe(mockSocket);
+        });
+
+        it('should setup required socket event listeners', () => {
+            const expectedEvents = [
+                'roomCreated',
+                'joinedRoom',
+                'playerJoined',
+                'roomError',
+                'playerReady',
+                'gameStart',
+                'playerLeft',
+                'connect_error'
+            ];
+
+            expectedEvents.forEach(event => {
+                expect(mockSocket.on).toHaveBeenCalledWith(event, expect.any(Function));
+            });
+        });
     });
 
-    it('should connect to socket server on init', () => {
-        scene.init();
-        expect(global.io).toHaveBeenCalledWith('http://localhost:3000');
-        expect(scene.socket).toBe(mockSocket);
+    describe('Room Management', () => {
+        it('should emit createRoom event when creating a room', () => {
+            scene.createRoom();
+            expect(mockSocket.emit).toHaveBeenCalledWith('createRoom');
+        });
+
+        it('should update scene state when room is created', () => {
+            const roomData = {
+                roomId: 'test-room',
+                playerId: 'player-1',
+                players: [{ id: 'player-1' }]
+            };
+
+            scene.handleRoomCreated(roomData);
+            
+            // Verify state updates
+            expect(scene.currentRoomId).toBe(roomData.roomId);
+            expect(scene.playerId).toBe(roomData.playerId);
+            
+            // Verify UI updates
+            expect(scene.mainContainer.setVisible).toHaveBeenCalledWith(false);
+            expect(scene.waitingContainer.setVisible).toHaveBeenCalledWith(true);
+            expect(scene.waitingContainer.removeAll).toHaveBeenCalled();
+        });
+
+        it('should update scene state when joining a room', () => {
+            const roomData = {
+                roomId: 'test-room',
+                playerId: 'player-2',
+                players: [
+                    { id: 'player-1' },
+                    { id: 'player-2' }
+                ]
+            };
+
+            scene.handleJoinedRoom(roomData);
+            
+            // Verify state updates
+            expect(scene.currentRoomId).toBe(roomData.roomId);
+            expect(scene.playerId).toBe(roomData.playerId);
+            
+            // Verify UI updates
+            expect(scene.mainContainer.setVisible).toHaveBeenCalledWith(false);
+            expect(scene.waitingContainer.setVisible).toHaveBeenCalledWith(true);
+        });
+
+        it('should display error message when room error occurs', () => {
+            const errorMsg = 'Room is full';
+            scene.handleRoomError(errorMsg);
+            expect(scene.add.text).toHaveBeenCalledWith(
+                expect.any(Number),
+                expect.any(Number),
+                errorMsg,
+                expect.any(Object)
+            );
+        });
     });
 
-    it('should setup socket listeners', () => {
-        scene.init();
-        expect(mockSocket.on).toHaveBeenCalledWith('roomCreated', expect.any(Function));
-        expect(mockSocket.on).toHaveBeenCalledWith('joinedRoom', expect.any(Function));
-        expect(mockSocket.on).toHaveBeenCalledWith('playerJoined', expect.any(Function));
-        expect(mockSocket.on).toHaveBeenCalledWith('roomError', expect.any(Function));
-        expect(mockSocket.on).toHaveBeenCalledWith('connect_error', expect.any(Function));
-    });
+    describe('Game Flow', () => {
+        it('should transition to MainScene when game starts', () => {
+            const gameData = {
+                roomId: 'test-room',
+                players: [
+                    { id: 'player-1', ready: true },
+                    { id: 'player-2', ready: true }
+                ],
+                gameState: { deck: [] },
+                currentTurn: 'player-1'
+            };
 
-    it('should create room when createRoom is called', () => {
-        scene.init();
-        scene.createRoom();
-        expect(mockSocket.emit).toHaveBeenCalledWith('createRoom');
-    });
+            scene.currentRoomId = gameData.roomId;
+            
+            // Get and call the gameStart handler
+            const gameStartHandler = mockSocket.on.mock.calls.find(
+                call => call[0] === 'gameStart'
+            )[1];
+            
+            gameStartHandler(gameData);
 
-    it('should show room code when room is created', () => {
-        scene.init();
-        scene.create();
-        const roomId = 'test-room-id';
-        
-        // Get the roomCreated callback
-        const roomCreatedCallback = mockSocket.on.mock.calls.find(call => call[0] === 'roomCreated')[1];
-        
-        // Call the callback with the room ID
-        roomCreatedCallback(roomId);
-        
-        // Check if containers are properly toggled
-        expect(scene.mainContainer.setVisible).toHaveBeenCalledWith(false);
-        expect(scene.waitingContainer.setVisible).toHaveBeenCalledWith(true);
-    });
+            // Verify scene transition
+            expect(scene.scene.start).toHaveBeenCalledWith('MainScene', {
+                socket: mockSocket,
+                roomId: gameData.roomId,
+                playerId: scene.playerId,
+                players: gameData.players,
+                gameState: gameData.gameState,
+                currentTurn: gameData.currentTurn
+            });
+        });
 
-    it('should start MainScene when joining room', () => {
-        scene.init();
-        const roomId = 'test-room-id';
-        
-        // Get the joinedRoom callback
-        const joinedRoomCallback = mockSocket.on.mock.calls.find(call => call[0] === 'joinedRoom')[1];
-        
-        // Call the callback with the room ID
-        joinedRoomCallback(roomId);
-        
-        // Check if scene transition occurs
-        expect(scene.scene.start).toHaveBeenCalledWith('MainScene', { socket: mockSocket });
-    });
+        it('should handle player disconnection', () => {
+            const disconnectData = {
+                roomId: 'test-room',
+                players: [{ id: 'player-1' }]
+            };
 
-    it('should show error when room join fails', () => {
-        scene.init();
-        const error = 'Room is full';
-        
-        // Get the roomError callback
-        const roomErrorCallback = mockSocket.on.mock.calls.find(call => call[0] === 'roomError')[1];
-        
-        // Call the callback with the error
-        roomErrorCallback(error);
-        
-        // Check if error is displayed
-        expect(scene.add.text).toHaveBeenCalledWith(
-            expect.any(Number),
-            expect.any(Number),
-            error,
-            expect.any(Object)
-        );
-    });
+            scene.currentRoomId = disconnectData.roomId;
+            
+            // Get and call the playerLeft handler
+            const playerLeftHandler = mockSocket.on.mock.calls.find(
+                call => call[0] === 'playerLeft'
+            )[1];
+            
+            playerLeftHandler(disconnectData);
 
-    it('should start MainScene when second player joins', () => {
-        scene.init();
-        const players = [{ id: '1' }, { id: '2' }];
-        
-        // Get the playerJoined callback
-        const playerJoinedCallback = mockSocket.on.mock.calls.find(call => call[0] === 'playerJoined')[1];
-        
-        // Call the callback with two players
-        playerJoinedCallback(players);
-        
-        // Check if scene transition occurs
-        expect(scene.scene.start).toHaveBeenCalledWith('MainScene', { socket: mockSocket });
+            // Verify error message is shown
+            expect(scene.add.text).toHaveBeenCalledWith(
+                expect.any(Number),
+                expect.any(Number),
+                'Other player left the game',
+                expect.any(Object)
+            );
+
+            // Verify delayed reload is scheduled
+            expect(scene.time.delayedCall).toHaveBeenCalledWith(
+                3000,
+                expect.any(Function)
+            );
+        });
     });
 }); 
