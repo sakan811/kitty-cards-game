@@ -33,6 +33,19 @@ export class MainScene extends Phaser.Scene {
                 return false;
             }
         };
+        this.opponentHand = {
+            container: null,
+            numberStack: {
+                cards: [],
+                container: null,
+                count: 0
+            },
+            assistStack: {
+                cards: [],
+                container: null,
+                count: 0
+            }
+        };
     }
 
     init(data) {
@@ -71,13 +84,20 @@ export class MainScene extends Phaser.Scene {
             return;
         }
 
+        // Add specific handler for opponent actions
+        this.socket.on('opponentAction', ({ action, data }) => {
+            console.log('Received opponent action:', action, data);
+            this.handleOpponentAction(action, data);
+        });
+
         this.socket.on('gameUpdate', ({ roomId, playerId, action, data, gameState }) => {
             if (roomId !== this.roomId) return;
             console.log('Game update:', { playerId, action, data, gameState });
             
             // Update game state
             this.gameState = gameState;
-            
+
+            // Only handle actions from opponent
             if (playerId !== this.playerId) {
                 this.handleOpponentAction(action, data);
             }
@@ -100,12 +120,37 @@ export class MainScene extends Phaser.Scene {
                 this.showGameOver('Opponent left the game');
             }
         });
+
+        // Add specific handler for opponent hand updates
+        this.socket.on('opponentHandUpdate', ({ roomId, handCount }) => {
+            if (roomId === this.roomId) {
+                console.log('Received opponent hand update:', handCount);
+                this.updateOpponentHand(handCount);
+            }
+        });
     }
 
     handleOpponentAction(action, data) {
         console.log('Handling opponent action:', action, data);
-        if (action === 'cardPlayed') {
-            this.add.sprite(data.x, data.y, 'card');
+        switch (action) {
+            case 'drawCard':
+                if (data.deckType) {
+                    console.log(`Opponent drew a ${data.deckType} card`);
+                    this.updateOpponentStack(data.deckType, 1, true);
+                }
+                break;
+            case 'playCard':
+                if (data.tileIndex !== undefined) {
+                    this.updateOpponentStack('number', -1, false);
+                    const tile = this.tiles[data.tileIndex];
+                    if (tile) {
+                        tile.setNumber(data.cardValue);
+                    }
+                }
+                break;
+            case 'playAssistCard':
+                this.updateOpponentStack('assist', -1, false);
+                break;
         }
     }
 
@@ -128,14 +173,127 @@ export class MainScene extends Phaser.Scene {
     }
 
     createOpponentHand() {
-        // Create face-down cards for opponent's hand
-        this.opponentCards = [];
-        // Position cards at the top of the screen
-        // Cards should be face down
+        // Main container for opponent's hand
+        this.opponentHand.container = this.add.container(400, 80);
+        
+        // Add background
+        const handBackground = this.add.rectangle(
+            0, 0,
+            700, 120,
+            0xf0f0f0
+        ).setAlpha(0.3);
+        
+        // Add label
+        const label = this.add.text(
+            0, -50,
+            "Opponent's Hand",
+            {
+                fontSize: '20px',
+                color: '#000000'
+            }
+        ).setOrigin(0.5);
+
+        // Create containers for each stack
+        this.opponentHand.numberStack.container = this.add.container(-150, 0);
+        this.opponentHand.assistStack.container = this.add.container(150, 0);
+
+        // Add stack labels
+        const numberLabel = this.add.text(
+            -150, -30,
+            'Number Cards',
+            { fontSize: '16px', color: '#000000' }
+        ).setOrigin(0.5);
+
+        const assistLabel = this.add.text(
+            150, -30,
+            'Assist Cards',
+            { fontSize: '16px', color: '#000000' }
+        ).setOrigin(0.5);
+
+        // Add everything to main container
+        this.opponentHand.container.add([
+            handBackground,
+            label,
+            numberLabel,
+            assistLabel,
+            this.opponentHand.numberStack.container,
+            this.opponentHand.assistStack.container
+        ]);
     }
 
-    updateOpponentHand(numCards) {
-        // Update the number of face-down cards shown for opponent
+    updateOpponentHand(cardCount) {
+        if (!this.opponentHand?.container) {
+            console.error('Opponent hand container not initialized');
+            return;
+        }
+        
+        console.log('Updating opponent hand display:', cardCount);
+
+        // Remove old card backs
+        this.opponentHand.numberStack.container.removeAll();
+        this.opponentHand.assistStack.container.removeAll();
+
+        // Keep background and label
+        const background = this.opponentHand.container.list[0];
+        const label = this.opponentHand.container.list[1];
+        this.opponentHand.container.removeAll();
+        this.opponentHand.container.add([background, label]);
+        
+        this.opponentHand.numberStack.count = cardCount;
+        this.opponentHand.assistStack.count = 0;
+
+        // Constants for card layout
+        const cardWidth = CARD_DIMENSIONS.width * 0.7; // Make opponent cards slightly smaller
+        const cardHeight = CARD_DIMENSIONS.height * 0.7;
+        const cardSpacing = 30;
+        const maxVisibleCards = 10;
+        
+        // Calculate total width needed and starting position
+        const totalWidth = Math.min(cardCount, maxVisibleCards) * (cardWidth + cardSpacing) - cardSpacing;
+        const startX = -totalWidth / 2;
+
+        // Create face-down cards with animation for changes
+        for (let i = 0; i < cardCount; i++) {
+            const x = startX + i * (cardWidth + cardSpacing);
+            
+            // Create card back sprite using actual card back texture
+            const cardBack = this.add.sprite(x, 0, ASSET_KEYS.numberCard)
+                .setDisplaySize(cardWidth, cardHeight)
+                .setOrigin(0.5);
+
+            // Add shine effect on card back
+            const shine = this.add.graphics();
+            shine.lineStyle(2, 0xffffff, 0.5);
+            shine.lineBetween(x - cardWidth/3, -cardHeight/3, x + cardWidth/3, cardHeight/3);
+            
+            // Add to container and track
+            this.opponentHand.container.add([cardBack, shine]);
+        }
+
+        // Add card count text with background
+        if (cardCount > 0) {
+            const countBackground = this.add.rectangle(
+                0,
+                cardHeight/2 + 15,
+                80,
+                30,
+                0x000000,
+                0.6
+            ).setOrigin(0.5);
+
+            const countText = this.add.text(
+                0,
+                cardHeight/2 + 15,
+                `${cardCount} cards`,
+                {
+                    fontSize: '16px',
+                    color: '#ffffff',
+                    fontStyle: 'bold'
+                }
+            ).setOrigin(0.5);
+            
+            this.opponentHand.container.add([countBackground, countText]);
+        }
     }
 
     preload() {
@@ -313,6 +471,9 @@ export class MainScene extends Phaser.Scene {
         } else {
             this.disableAllInteractions();
         }
+
+        // Add opponent's hand display
+        this.createOpponentHand();
 
         console.log('Game scene created successfully');
     }
@@ -754,5 +915,65 @@ export class MainScene extends Phaser.Scene {
                 padding: { x: 20, y: 10 }
             }
         ).setOrigin(0.5);
+    }
+
+    updateOpponentStack(deckType, change, animate = false) {
+        const stack = deckType === 'number' ? 
+            this.opponentHand.numberStack : 
+            this.opponentHand.assistStack;
+        
+        // Clear existing cards
+        stack.container.removeAll();
+        
+        // Update count
+        stack.count = Math.max(0, stack.count + change);
+        
+        // Constants for card layout
+        const cardWidth = CARD_DIMENSIONS.width * 0.7;
+        const cardHeight = CARD_DIMENSIONS.height * 0.7;
+        const cardSpacing = 10;
+        const maxVisibleCards = 5;
+        
+        // Create visual representation of cards
+        for (let i = 0; i < Math.min(stack.count, maxVisibleCards); i++) {
+            const cardBack = this.add.container(i * cardSpacing, i * cardSpacing);
+            
+            // Create card back with appropriate texture
+            const cardSprite = this.add.sprite(0, 0, 
+                deckType === 'number' ? ASSET_KEYS.numberCard : ASSET_KEYS.assistCard
+            ).setDisplaySize(cardWidth, cardHeight);
+            
+            cardBack.add(cardSprite);
+            
+            if (animate && i === stack.count - 1) {
+                cardBack.setScale(0);
+                this.tweens.add({
+                    targets: cardBack,
+                    scaleX: 1,
+                    scaleY: 1,
+                    duration: 200,
+                    ease: 'Back.easeOut'
+                });
+            }
+            
+            stack.container.add(cardBack);
+        }
+        
+        // Add count text if there are more cards than visible
+        if (stack.count > maxVisibleCards) {
+            const countText = this.add.text(
+                (maxVisibleCards - 1) * cardSpacing + cardWidth/2,
+                (maxVisibleCards - 1) * cardSpacing + cardHeight/2,
+                `+${stack.count - maxVisibleCards}`,
+                {
+                    fontSize: '16px',
+                    color: '#000',
+                    backgroundColor: '#fff',
+                    padding: { x: 4, y: 2 }
+                }
+            ).setOrigin(0.5);
+            
+            stack.container.add(countText);
+        }
     }
 } 
