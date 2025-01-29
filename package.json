@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "test": "vitest",
-    "start": "node server.js"
+    "start": "node server.js",
+    "start:dev": "NODE_ENV=development node server.js"
   },
   "author": "",
   "license": "ISC",
