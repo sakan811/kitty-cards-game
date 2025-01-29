@@ -8,9 +8,80 @@ import { Card } from '../entities/Card.js';
 export class MainScene extends Phaser.Scene {
     constructor() {
         super({ key: 'MainScene' });
+        this.socket = null;
         this.selectedCard = null;
         this.totalPoints = 0;
         this.pointsText = null;
+        this.isPlayerTurn = false;
+        this.playerId = null;
+        this.opponentId = null;
+    }
+
+    init(data) {
+        console.log('MainScene init with data:', data);
+        if (data && data.socket) {
+            this.socket = data.socket;
+            this.setupSocketListeners();
+        } else {
+            console.error('No socket provided to MainScene');
+        }
+    }
+
+    setupSocketListeners() {
+        if (!this.socket) {
+            console.error('Cannot setup listeners: Socket not initialized');
+            return;
+        }
+
+        this.socket.on('gameStart', () => {
+            console.log('Game starting...');
+            this.startGame();
+        });
+
+        this.socket.on('gameUpdate', ({ playerId, action, data }) => {
+            console.log('Game update:', { playerId, action, data });
+            if (playerId !== this.socket.id) {
+                this.handleOpponentAction(action, data);
+            }
+        });
+
+        this.socket.on('playerLeft', () => {
+            this.showGameOver('Opponent left the game');
+        });
+    }
+
+    handleOpponentAction(action, data) {
+        switch (action) {
+            case 'cardPlayed':
+                this.handleOpponentCardPlayed(data);
+                break;
+            case 'cardDrawn':
+                this.handleOpponentCardDrawn();
+                break;
+            // Add more actions as needed
+        }
+    }
+
+    handleOpponentCardPlayed(cardData) {
+        // Update opponent's hand visualization
+        // Show the card being played
+        // Update game state
+    }
+
+    handleOpponentCardDrawn() {
+        // Update opponent's hand visualization
+        // Show card draw animation
+    }
+
+    createOpponentHand() {
+        // Create face-down cards for opponent's hand
+        this.opponentCards = [];
+        // Position cards at the top of the screen
+        // Cards should be face down
+    }
+
+    updateOpponentHand(numCards) {
+        // Update the number of face-down cards shown for opponent
     }
 
     preload() {
@@ -189,6 +260,8 @@ export class MainScene extends Phaser.Scene {
     }
 
     onCardClick(card) {
+        if (!this.isPlayerTurn) return;
+        
         if (this.selectedCard === card) {
             this.selectedCard = null;
             card.deselect();
@@ -202,6 +275,16 @@ export class MainScene extends Phaser.Scene {
             card.select();
             card.lift();
         }
+
+        // Emit the action to other player
+        this.socket.emit('gameAction', {
+            action: 'cardPlayed',
+            data: {
+                type: card.type,
+                value: card.value,
+                // Add any other necessary card data
+            }
+        });
     }
 
     activateByeByeCard(card) {
@@ -523,5 +606,22 @@ export class MainScene extends Phaser.Scene {
         .on('pointerdown', () => {
             this.scene.restart();
         });
+    }
+
+    startTurn() {
+        this.isPlayerTurn = true;
+        // Enable interactions
+        // Show turn indicator
+    }
+
+    endTurn() {
+        this.isPlayerTurn = false;
+        // Disable interactions
+        // Update turn indicator
+    }
+
+    showGameOver(message) {
+        // Show game over message
+        // Add option to return to lobby
     }
 } 
