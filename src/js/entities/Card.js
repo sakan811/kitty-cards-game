@@ -237,10 +237,17 @@ export class Card {
             });
 
             const sourceSprite = this.frontSprite?.active ? this.frontSprite : this.sprite;
+            let descriptionText = `Card Type: ${this.type}\nValue: ${this.value}`;
+            
+            // Add assist card description if it's an assist card
+            if (this.type === 'assist' && ASSIST_CARDS[this.value]) {
+                descriptionText = ASSIST_CARDS[this.value].description;
+            }
+
             this.description = this.scene.add.text(
                 sourceSprite.x,
                 sourceSprite.y - 70,
-                `Card Type: ${this.type}\nValue: ${this.value}`,
+                descriptionText,
                 {
                     fontSize: '16px',
                     color: '#000',
