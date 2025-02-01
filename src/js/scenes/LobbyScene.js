@@ -353,6 +353,7 @@ export class LobbyScene extends Phaser.Scene {
                 .setText('Waiting...')
                 .setStyle({ color: '#666666' });
         }
+
     }
 
     waitForPlayer() {
