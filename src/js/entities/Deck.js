@@ -1,18 +1,51 @@
-import { DECK_VALUES, CARD_DIMENSIONS } from '../config/constants.js';
+import { DECK_VALUES, CARD_DIMENSIONS, ASSET_KEYS } from '../config/constants.js';
 import { Card } from './Card.js';
 
 export class Deck {
     constructor(scene, x, y, type) {
         this.scene = scene;
+        this.type = type;
         this.x = x;
         this.y = y;
-        this.type = type;
-        this.cards = this.createCards();
-        this.createVisual();
+        this.cards = this.createCards(); // Initialize cards array
+        this.visual = scene.add.image(x, y, type === 'number' ? ASSET_KEYS.numberCard : ASSET_KEYS.assistCard)
+            .setDisplaySize(CARD_DIMENSIONS.width, CARD_DIMENSIONS.height)
+            .setDepth(1) // Set base depth for deck
+            .setInteractive({ useHandCursor: true })
+            .on('pointerdown', () => this.handleDraw());
+    }
+
+    handleDraw() {
+        // Remove direct card drawing logic and only emit event to server
+        if (!this.scene.isPlayerTurn) {
+            console.log('Not your turn!');
+            return;
+        }
+
+        // Emit draw request to server and wait for response
+        this.scene.socket.emit('gameAction', {
+            roomId: this.scene.roomId,
+            action: 'drawCard',
+            data: {
+                deckType: this.type
+            }
+        });
+    }
+
+    setInteractive(enabled) {
+        if (enabled) {
+            this.visual.setInteractive({ useHandCursor: true });
+        } else {
+            this.visual.disableInteractive();
+        }
     }
 
     createCards() {
         const values = DECK_VALUES[this.type];
+        if (!values) {
+            console.error(`No values defined for deck type: ${this.type}`);
+            return [];
+        }
         const pairs = 2; // Each value appears twice
         return Phaser.Utils.Array.Shuffle(Array(pairs).fill(values).flat());
     }
@@ -33,7 +66,7 @@ export class Deck {
     }
 
     drawCard() {
-        if (this.cards.length === 0) {
+        if (!this.cards || this.cards.length === 0) {
             this.showEmptyDeckWarning();
             return null;
         }
