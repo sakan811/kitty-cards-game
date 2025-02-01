@@ -1,4 +1,4 @@
-import { CARD_DIMENSIONS, COLORS, ASSIST_CARDS } from '../config/constants.js';
+import { CARD_DIMENSIONS, COLORS, ASSIST_CARDS, ASSET_KEYS } from '../config/constants.js';
 
 export class Card {
     constructor(scene, x, y, type, value) {
@@ -18,7 +18,7 @@ export class Card {
     }
 
     createSprite(x, y) {
-        const texture = this.type === 'number' ? 'number-card' : 'assist-card';
+        const texture = this.type === 'number' ? ASSET_KEYS.numberCard : ASSET_KEYS.assistCard;
         this.sprite = this.scene.add.image(x, y, texture)
             .setDisplaySize(CARD_DIMENSIONS.width, CARD_DIMENSIONS.height)
             .setInteractive()
@@ -50,7 +50,10 @@ export class Card {
         let color;
 
         if (this.type === 'number') {
-            color = COLORS.numberColors[this.value];
+            color = COLORS.numberColors[this.value] || {
+                hex: '0x808080',  // Default gray for unknown numbers
+                cup: 'cup-white'
+            };
             textureName = `card-front-${this.value}`;
             
             // Create the colored front sprite
@@ -106,9 +109,13 @@ export class Card {
     createText(x, y) {
         let textConfig;
         if (this.type === 'assist') {
+            const assistCard = ASSIST_CARDS[this.value] || {
+                name: this.value,
+                color: '#000000'  // Default color for unknown assist cards
+            };
             textConfig = {
                 fontSize: '20px',
-                color: ASSIST_CARDS[this.value].color,
+                color: assistCard.color,
                 fontWeight: 'bold'
             };
         } else {
@@ -122,7 +129,9 @@ export class Card {
         this.text = this.scene.add.text(
             x,
             y,
-            this.type === 'assist' ? ASSIST_CARDS[this.value].name : this.value.toString(),
+            this.type === 'assist' ? 
+                (ASSIST_CARDS[this.value]?.name || this.value) : 
+                this.value.toString(),
             textConfig
         )
             .setOrigin(0.5)
