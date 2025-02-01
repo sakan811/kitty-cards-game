@@ -372,9 +372,9 @@ export class MainScene extends Phaser.Scene {
             { x: gridStartX + (tileSize * 2) + (tileSpacing * 2), y: gridStartY + (tileSize * 2) + (tileSpacing * 2) }
         ];
 
-        // Create tiles based on server's game state
-        this.tiles = [];
-        this.gameState.tiles.forEach((tileData, index) => {
+        // Initialize tiles with fallback
+        const tilesData = this.gameState?.tiles || [];
+        this.tiles = tilesData.map((tileData, index) => {
             const pos = positions[index];
             const cupColor = tileData.cupColor;
             const assetKey = ASSET_KEYS[cupColor.split('-').map((part, i) => 
@@ -395,7 +395,6 @@ export class MainScene extends Phaser.Scene {
                 tileSize,
                 assetKey
             );
-            this.tiles.push(tile);
 
             // Apply any existing numbers
             if (tileData.hasNumber) {
@@ -404,6 +403,8 @@ export class MainScene extends Phaser.Scene {
 
             tile.sprite.setInteractive({ useHandCursor: true });
             tile.sprite.on('pointerdown', () => this.onTileClick(tile, index));
+
+            return tile;
         });
 
         // Create hand
