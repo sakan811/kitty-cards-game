@@ -9,12 +9,29 @@ export class LobbyScene extends Phaser.Scene {
         this.playerId = null;
         this.readyButton = null;
         this.statusText = null;
+        this.players = [];
     }
 
     init() {
-        // Connect to Socket.IO server using the global io object
+        this.currentRoomId = null;
+        this.playerId = null;
+        this.players = [];
+        this.statusText = null;
+        
         this.socket = io('http://localhost:3000');
         this.setupSocketListeners();
+
+        this.events.once('shutdown', this.cleanup, this);
+    }
+
+    cleanup() {
+        if (this.socket) {
+            this.socket.removeAllListeners();
+            this.socket.disconnect();
+        }
+        this.players = [];
+        this.currentRoomId = null;
+        this.playerId = null;
     }
 
     create() {
@@ -119,47 +136,54 @@ export class LobbyScene extends Phaser.Scene {
     }
 
     setupSocketListeners() {
+        this.socket.removeAllListeners();
+
         this.socket.on('roomCreated', this.handleRoomCreated.bind(this));
         this.socket.on('joinedRoom', this.handleJoinedRoom.bind(this));
         this.socket.on('playerJoined', this.handlePlayerJoined.bind(this));
         this.socket.on('roomError', this.handleRoomError.bind(this));
 
-        this.socket.on('playerReady', ({ roomId, players }) => {
-            console.log('Player ready update received:', {
-                roomId,
-                currentRoomId: this.currentRoomId,
-                players: players.map(p => ({
-                    id: p.id,
-                    ready: p.ready,
-                    isCurrentPlayer: p.id === this.playerId
-                }))
-            });
+        this.socket.on('playerReady', ({ roomId, room }) => {
+            if (!roomId || !room || !room.players) {
+                console.error('Invalid data received for playerReady event:', { roomId, room });
+                return;
+            }
+
             if (this.currentRoomId === roomId) {
-                this.updatePlayerStatus(players);
+                this.players = room.players;
+                this.updatePlayerStatus(room.players);
             }
         });
 
-        this.socket.on('gameStart', ({ roomId, players, gameState, currentTurn }) => {
-            console.log('Game starting:', { roomId, players, gameState, currentTurn });
+        this.socket.on('gameStart', ({ roomId, gameState }) => {
+            if (!roomId || !gameState) {
+                console.error('Invalid data received for gameStart event:', { roomId, gameState });
+                return;
+            }
+
             if (this.currentRoomId === roomId) {
                 this.scene.start('MainScene', { 
                     socket: this.socket,
                     roomId: this.currentRoomId,
                     playerId: this.playerId,
-                    players,
+                    players: this.players,
                     gameState,
-                    currentTurn
+                    currentTurn: gameState.currentPlayer
                 });
             }
         });
 
-        this.socket.on('playerLeft', ({ roomId, players }) => {
+        this.socket.on('playerLeft', ({ roomId, room }) => {
             if (this.currentRoomId === roomId) {
-                this.showError('Other player left the game');
-                // Optional: Return to main menu after delay
-                this.time.delayedCall(3000, () => {
-                    window.location.reload();
-                });
+                if (room && room.players) {
+                    this.players = room.players;
+                    this.showWaitingRoom(room.players);
+                } else {
+                    this.showError('Other player left the game');
+                    this.time.delayedCall(3000, () => {
+                        window.location.reload();
+                    });
+                }
             }
         });
 
@@ -206,6 +230,14 @@ export class LobbyScene extends Phaser.Scene {
     }
 
     showWaitingRoom(players) {
+        if (!players || !Array.isArray(players)) {
+            console.error('Invalid players data in showWaitingRoom:', players);
+            this.showError('Invalid room data received');
+            return;
+        }
+
+        this.players = players;
+
         this.mainContainer.setVisible(false);
         this.waitingContainer.setVisible(true);
         
@@ -217,21 +249,16 @@ export class LobbyScene extends Phaser.Scene {
         this.waitingContainer.add(bg);
 
         // Show room code section
-        if (this.playerId === players[0].id) {
-            const titleText = this.add.text(400, 100, `Room Code: ${this.currentRoomId}`, {
-                fontSize: '24px',
-                color: '#000',
-                fontStyle: 'bold'
-            }).setOrigin(0.5);
-            this.waitingContainer.add(titleText);
+        const isHost = players.length > 0 && this.playerId === players[0].id;
+        const titleText = this.add.text(400, 100, `Room Code: ${this.currentRoomId}`, {
+            fontSize: '24px',
+            color: '#000',
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
+        this.waitingContainer.add(titleText);
+        
+        if (isHost) {
             this.showCopyableCode(this.currentRoomId);
-        } else {
-            const titleText = this.add.text(400, 100, `Room Code: ${this.currentRoomId}`, {
-                fontSize: '24px',
-                color: '#000',
-                fontStyle: 'bold'
-            }).setOrigin(0.5);
-            this.waitingContainer.add(titleText);
         }
 
         // Create player status container
@@ -309,6 +336,11 @@ export class LobbyScene extends Phaser.Scene {
     }
 
     updatePlayerStatus(players) {
+        if (!players || !Array.isArray(players)) {
+            console.error('Invalid players data received:', players);
+            return;
+        }
+
         console.log('Updating player status:', {
             players: players.map(p => ({
                 id: p.id,
@@ -338,6 +370,7 @@ export class LobbyScene extends Phaser.Scene {
                 this.waitingContainer.list.forEach(child => {
                     if (child.type === 'Text' && child.text === 'Ready') {
                         child.disableInteractive();
+                        child.setAlpha(0.6);
                     }
                 });
             }
@@ -353,7 +386,6 @@ export class LobbyScene extends Phaser.Scene {
                 .setText('Waiting...')
                 .setStyle({ color: '#666666' });
         }
-
     }
 
     waitForPlayer() {
@@ -388,24 +420,45 @@ export class LobbyScene extends Phaser.Scene {
     }
 
     handleRoomCreated({ roomId, playerId }) {
+        if (!roomId || !playerId) {
+            console.error('Invalid room creation data:', { roomId, playerId });
+            this.showError('Invalid room data received');
+            return;
+        }
+
         console.log('Room created:', roomId, 'Player ID:', playerId);
         this.currentRoomId = roomId;
         this.playerId = playerId;
-        this.showWaitingRoom([{ id: playerId, ready: false }]);
+        this.players = [{ id: playerId, ready: false }];
+        this.showWaitingRoom(this.players);
         this.showCopyableCode(roomId);
     }
 
-    handleJoinedRoom({ roomId, playerId, players }) {
+    handleJoinedRoom({ roomId, playerId, room }) {
+        if (!roomId || !playerId || !room || !room.players) {
+            console.error('Invalid room join data:', { roomId, playerId, room });
+            this.showError('Invalid room data received');
+            return;
+        }
+
         console.log('Joined room:', roomId, 'as player:', playerId);
         this.currentRoomId = roomId;
         this.playerId = playerId;
-        this.showWaitingRoom(players);
+        this.players = room.players;
+        this.showWaitingRoom(room.players);
     }
 
-    handlePlayerJoined({ roomId, players }) {
-        console.log('Player joined. Current players:', players);
+    handlePlayerJoined({ roomId, room }) {
+        if (!roomId || !room || !room.players) {
+            console.error('Invalid player joined data:', { roomId, room });
+            this.showError('Invalid room data received');
+            return;
+        }
+
+        console.log('Player joined. Current players:', room.players);
         if (this.currentRoomId === roomId) {
-            this.showWaitingRoom(players);
+            this.players = room.players;
+            this.showWaitingRoom(room.players);
         }
     }
 
