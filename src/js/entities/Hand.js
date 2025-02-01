@@ -1,4 +1,5 @@
 import { HAND_CONFIG, CARD_DIMENSIONS } from '../config/constants.js';
+import { Card } from './Card.js';
 
 export class Hand {
     constructor(scene, x, y, width) {
@@ -35,16 +36,20 @@ export class Hand {
     }
 
     addCard(card) {
-        if (this.cards.length >= HAND_CONFIG.maxCards) {
-            this.showFullHandWarning();
-            return false;
-        }
+        // Check for duplicates
+        const isDuplicate = this.cards.some(existingCard => 
+            existingCard.type === card.type && 
+            existingCard.value === card.value
+        );
 
-        this.cards.push(card);
-        const position = this.getCardPosition(this.cards.length - 1);
-        card.moveTo(position.x, position.y);
-        this.updateCardDepths();
-        return true;
+        if (!isDuplicate) {
+            const position = this.getCardPosition(this.cards.length);
+            card.moveTo(position.x, position.y);
+            this.cards.push(card);
+            this.updateCardDepths();
+        } else {
+            card.destroy();
+        }
     }
 
     getCardPosition(index) {
@@ -105,5 +110,33 @@ export class Hand {
         this.cards.forEach(card => card.destroy());
         if (this.area?.active) this.area.destroy();
         if (this.label?.active) this.label.destroy();
+    }
+
+    render(cards) {
+        console.log('Rendering hand with cards:', cards);
+        
+        // Clear existing cards
+        this.cards.forEach(card => card.destroy());
+        this.cards = [];
+
+        // Add new cards
+        if (Array.isArray(cards)) {
+            cards.forEach((cardData, index) => {
+                const position = this.getCardPosition(index);
+                const card = new Card(
+                    this.scene, 
+                    position.x, 
+                    position.y, 
+                    cardData.type || cardData.cardType,
+                    cardData.value || cardData.cardValue
+                );
+                this.cards.push(card);
+                
+                // Flip the card since it's in the player's hand
+                card.flip();
+            });
+        }
+
+        this.updateCardDepths();
     }
 } 
