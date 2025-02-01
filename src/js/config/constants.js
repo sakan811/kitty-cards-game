@@ -37,12 +37,20 @@ export const ASSIST_CARDS = {
 };
 
 export const ASSET_KEYS = {
-    numberCard: 'number-card',
-    assistCard: 'assist-card',
-    cupWhite: 'cup-white',
-    cupPurple: 'cup-purple',
-    cupRed: 'cup-red',
-    cupGreen: 'cup-green',
-    cupBrown: 'cup-brown',
-    cardFront: 'card-front'
+    // Card assets
+    'numberCard': 'number-card-back',
+    'assistCard': 'assist-card-back',
+    'cardFront': 'card-front',
+    
+    // Cup assets - keys must match the image filenames exactly
+    'cup-white': 'cup-white',
+    'cup-purple': 'cup-purple',
+    'cup-red': 'cup-red',
+    'cup-green': 'cup-green',
+    'cup-brown': 'cup-brown',
+    'cupWhite': 'cup-white',
+    'cupPurple': 'cup-purple',
+    'cupRed': 'cup-red',
+    'cupGreen': 'cup-green',
+    'cupBrown': 'cup-brown'
 }; 
