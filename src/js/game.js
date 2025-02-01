@@ -1,5 +1,6 @@
 import { MainScene } from './scenes/MainScene.js';
 import { LobbyScene } from './scenes/LobbyScene.js';
+import { PreloadScene } from './scenes/PreloadScene.js';
 
 let game = null;
 
@@ -21,7 +22,7 @@ if (typeof Phaser === 'undefined') {
         dom: {
             createContainer: true
         },
-        scene: [LobbyScene, MainScene],
+        scene: [PreloadScene, LobbyScene, MainScene],
         scale: {
             mode: Phaser.Scale.FIT,
             autoCenter: Phaser.Scale.CENTER_BOTH
@@ -30,7 +31,7 @@ if (typeof Phaser === 'undefined') {
     };
 
     try {
-        console.log('Initializing game with scenes:', [LobbyScene, MainScene]);
+        console.log('Initializing game with scenes:', [PreloadScene, LobbyScene, MainScene]);
         game = new Phaser.Game(config);
 
         // Handle window resize
