@@ -13,16 +13,16 @@ export class MainScene extends Phaser.Scene {
         this.playerId = null;
         this.opponentId = null;
         this.roomId = null;
+        this.socket = null;
+        this.gameState = null;
 
-        // Game elements
-        this.hand = null;
-        this.tiles = [];
-        this.decks = {};
-        this.discardPile = null;
+        // Managers
+        this.socketManager = null;
+        this.boardManager = null;
+        this.uiManager = null;
 
         // Game state
         this.selectedCard = null;
-        this.totalPoints = 0;
         this.isPlayerTurn = false;
         this.currentPhase = null;
     }
@@ -31,12 +31,19 @@ export class MainScene extends Phaser.Scene {
         console.log('MainScene init with data:', data);
         if (!data?.socket) {
             console.error('No socket provided to MainScene');
+            this.scene.start('LobbyScene');
             return;
         }
 
         this.initializeGameState(data);
         this.socketManager = new SocketManager(this);
         this.socketManager.setupSocketListeners();
+
+        this.events.once('shutdown', () => {
+            if (this.socketManager) {
+                this.socketManager.removeListeners();
+            }
+        });
     }
 
     initializeGameState(data) {
@@ -51,11 +58,18 @@ export class MainScene extends Phaser.Scene {
         if (data.gameState) {
             this.gameState = data.gameState;
             this.isPlayerTurn = data.gameState.currentPlayer === this.playerId;
+            this.currentPhase = data.gameState.currentPhase;
+        } else {
+            console.error('No game state provided');
+            this.scene.start('LobbyScene');
         }
     }
 
     create() {
-        if (!this.validateGameState()) return;
+        if (!this.validateGameState()) {
+            this.scene.start('LobbyScene');
+            return;
+        }
 
         this.boardManager = new BoardManager(this);
         this.uiManager = new UIManager(this);
@@ -69,7 +83,7 @@ export class MainScene extends Phaser.Scene {
     }
 
     validateGameState() {
-        if (!this.gameState?.tiles) {
+        if (!this.gameState) {
             console.error('No game state available');
             return false;
         }
@@ -80,27 +94,27 @@ export class MainScene extends Phaser.Scene {
         this.isPlayerTurn = this.gameState.currentPlayer === this.playerId;
         this.currentPhase = this.gameState.currentPhase;
         
-        this.uiManager.updateTurnIndicator();
-        this.boardManager.updateDeckInteractions();
+        if (this.uiManager) {
+            this.uiManager.updateTurnIndicator();
+        }
+        if (this.boardManager) {
+            this.boardManager.updateDeckInteractions();
+        }
     }
 
     onDeckClick(deck) {
         if (!this.canDrawCard(deck)) return;
-        
-        this.socket.emit('drawCard', {
-            deckType: deck.type,
-            roomId: this.roomId
-        });
+        this.socketManager.drawCard(deck.type);
     }
 
     canDrawCard(deck) {
         if (!this.isPlayerTurn) {
-            this.uiManager.showWarning("It's not your turn!");
+            this.uiManager?.showWarning("It's not your turn!");
             return false;
         }
 
         if (this.currentPhase !== 'draw') {
-            this.uiManager.showWarning("You can't draw cards in this phase!");
+            this.uiManager?.showWarning("You can't draw cards in this phase!");
             return false;
         }
 
@@ -109,20 +123,14 @@ export class MainScene extends Phaser.Scene {
 
     onTileClick(tile, tileIndex) {
         if (!this.selectedCard || !this.isPlayerTurn) return;
-
-        this.socket.emit('playCard', {
-            cardType: this.selectedCard.type,
-            cardValue: this.selectedCard.value,
-            tileIndex: tileIndex,
-            roomId: this.roomId
-        });
+        this.socketManager.playCard(this.selectedCard, tileIndex);
     }
 
     enableAllInteractions() {
-        this.boardManager.enableInteractions();
+        this.boardManager?.enableInteractions();
     }
 
     disableAllInteractions() {
-        this.boardManager.disableInteractions();
+        this.boardManager?.disableInteractions();
     }
 } 
