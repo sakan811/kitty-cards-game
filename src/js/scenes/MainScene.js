@@ -125,7 +125,19 @@ export class MainScene extends Phaser.Scene {
         this.socket.on('opponentHandUpdate', ({ roomId, handCount }) => {
             if (roomId === this.roomId) {
                 console.log('Received opponent hand update:', handCount);
-                this.updateOpponentHand(handCount);
+                if (typeof handCount === 'object') {
+                    // If handCount contains separate counts for number and assist cards
+                    if (handCount.numberCount !== undefined) {
+                        this.opponentHand.numberStack.count = handCount.numberCount;
+                    }
+                    if (handCount.assistCount !== undefined) {
+                        this.opponentHand.assistStack.count = handCount.assistCount;
+                    }
+                } else {
+                    // Legacy support for single number
+                    this.opponentHand.numberStack.count = handCount;
+                }
+                this.updateOpponentHand();
             }
         });
     }
@@ -134,33 +146,23 @@ export class MainScene extends Phaser.Scene {
         console.log('Handling opponent action:', action, data);
         switch (action) {
             case 'drawCard':
-                if (data.deckType && data.handCount !== undefined) {
-                    console.log(`Opponent drew a ${data.deckType} card`);
-                    // Use the handCount from server directly
-                    if (data.deckType === 'number') {
-                        this.opponentHand.numberStack.count = data.handCount;
-                    } else if (data.deckType === 'assist') {
-                        this.opponentHand.assistStack.count = data.handCount;
-                    }
-                    this.updateOpponentHand();
+                if (data.deckType === 'number') {
+                    this.opponentHand.numberStack.count = data.handCount;
+                } else if (data.deckType === 'assist') {
+                    this.opponentHand.assistStack.count = data.handCount;
                 }
+                this.updateOpponentHand();
                 break;
             case 'playCard':
-                if (data.tileIndex !== undefined && data.handCount !== undefined) {
-                    // Use handCount from server
-                    this.opponentHand.numberStack.count = data.handCount;
-                    this.updateOpponentHand();
+                // Update opponent hand count
+                this.opponentHand.numberStack.count = data.handCount;
+                this.updateOpponentHand();
+                // Update tile if provided
+                if (data.tileIndex !== undefined) {
                     const tile = this.tiles[data.tileIndex];
-                    if (tile) {
+                    if (tile && tile.setNumber) {
                         tile.setNumber(data.cardValue);
                     }
-                }
-                break;
-            case 'playAssistCard':
-                if (data.handCount !== undefined) {
-                    // Use handCount from server
-                    this.opponentHand.assistStack.count = data.handCount;
-                    this.updateOpponentHand();
                 }
                 break;
         }
@@ -239,92 +241,73 @@ export class MainScene extends Phaser.Scene {
             return;
         }
         
-        console.log('Updating opponent hand display:', {
-            numberCards: this.opponentHand.numberStack.count,
-            assistCards: this.opponentHand.assistStack.count
-        });
+        // Update number stack
+        this.updateOpponentStack('number', 0);
+        
+        // Update assist stack
+        this.updateOpponentStack('assist', 0);
+    }
 
-        // Remove old card backs
-        this.opponentHand.numberStack.container.removeAll();
-        this.opponentHand.assistStack.container.removeAll();
-
-        // Keep background and labels
-        const background = this.opponentHand.container.list[0];
-        const mainLabel = this.opponentHand.container.list[1];
-        const numberLabel = this.opponentHand.container.list[2];
-        const assistLabel = this.opponentHand.container.list[3];
-        this.opponentHand.container.removeAll();
-        this.opponentHand.container.add([background, mainLabel, numberLabel, assistLabel]);
-
+    updateOpponentStack(deckType, change, animate = false) {
+        const stack = deckType === 'number' ? 
+            this.opponentHand.numberStack : 
+            this.opponentHand.assistStack;
+        
+        if (!stack.container) {
+            console.error(`${deckType} stack container not initialized`);
+            return;
+        }
+        
+        // Clear existing cards
+        stack.container.removeAll();
+        
         // Constants for card layout
         const cardWidth = CARD_DIMENSIONS.width * 0.7;
         const cardHeight = CARD_DIMENSIONS.height * 0.7;
-        const cardSpacing = 30;
+        const cardSpacing = 10;
         const maxVisibleCards = 5;
-
-        // Create number cards
-        const numberCount = this.opponentHand.numberStack.count;
-        if (numberCount > 0) {
-            const totalWidth = Math.min(numberCount, maxVisibleCards) * cardSpacing;
-            const startX = -150 - totalWidth / 2;
-
-            for (let i = 0; i < numberCount; i++) {
-                const x = startX + i * cardSpacing;
-                const cardBack = this.add.sprite(x, 0, ASSET_KEYS.numberCard)
-                    .setDisplaySize(cardWidth, cardHeight)
-                    .setOrigin(0.5);
-                this.opponentHand.numberStack.container.add(cardBack);
+        
+        // Create visual representation of cards
+        for (let i = 0; i < Math.min(stack.count, maxVisibleCards); i++) {
+            const cardBack = this.add.container(i * cardSpacing, i * cardSpacing);
+            
+            // Create card back with appropriate texture
+            const cardSprite = this.add.sprite(0, 0, 
+                deckType === 'number' ? ASSET_KEYS.numberCard : ASSET_KEYS.assistCard
+            ).setDisplaySize(cardWidth, cardHeight);
+            
+            cardBack.add(cardSprite);
+            
+            if (animate && i === stack.count - 1) {
+                cardBack.setScale(0);
+                this.tweens.add({
+                    targets: cardBack,
+                    scaleX: 1,
+                    scaleY: 1,
+                    duration: 200,
+                    ease: 'Back.easeOut'
+                });
             }
-
-            // Add count text for number cards
-            const numberCountText = this.add.text(
-                -150,
-                cardHeight/2 + 15,
-                `${numberCount}`,
+            
+            stack.container.add(cardBack);
+        }
+        
+        // Add count text if there are more cards than visible
+        if (stack.count > maxVisibleCards) {
+            const countText = this.add.text(
+                (maxVisibleCards - 1) * cardSpacing + cardWidth/2,
+                (maxVisibleCards - 1) * cardSpacing + cardHeight/2,
+                `+${stack.count - maxVisibleCards}`,
                 {
                     fontSize: '16px',
-                    color: '#ffffff',
-                    backgroundColor: '#000000',
-                    padding: { x: 10, y: 5 }
+                    color: '#000',
+                    backgroundColor: '#fff',
+                    padding: { x: 4, y: 2 }
                 }
             ).setOrigin(0.5);
-            this.opponentHand.numberStack.container.add(numberCountText);
+            
+            stack.container.add(countText);
         }
-
-        // Create assist cards
-        const assistCount = this.opponentHand.assistStack.count;
-        if (assistCount > 0) {
-            const totalWidth = Math.min(assistCount, maxVisibleCards) * cardSpacing;
-            const startX = 150 - totalWidth / 2;
-
-            for (let i = 0; i < assistCount; i++) {
-                const x = startX + i * cardSpacing;
-                const cardBack = this.add.sprite(x, 0, ASSET_KEYS.assistCard)
-                    .setDisplaySize(cardWidth, cardHeight)
-                    .setOrigin(0.5);
-                this.opponentHand.assistStack.container.add(cardBack);
-            }
-
-            // Add count text for assist cards
-            const assistCountText = this.add.text(
-                150,
-                cardHeight/2 + 15,
-                `${assistCount}`,
-                {
-                    fontSize: '16px',
-                    color: '#ffffff',
-                    backgroundColor: '#000000',
-                    padding: { x: 10, y: 5 }
-                }
-            ).setOrigin(0.5);
-            this.opponentHand.assistStack.container.add(assistCountText);
-        }
-
-        // Add containers back to main container
-        this.opponentHand.container.add([
-            this.opponentHand.numberStack.container,
-            this.opponentHand.assistStack.container
-        ]);
     }
 
     preload() {
@@ -545,48 +528,17 @@ export class MainScene extends Phaser.Scene {
     }
 
     onTileClick(tile, tileIndex) {
-        if (!this.isPlayerTurn) {
-            this.showWarning('Not your turn!');
-            return;
-        }
+        if (!this.isPlayerTurn || !this.selectedCard) return;
 
-        if (!this.selectedCard) return;
-
-        if (this.selectedCard.type === 'number' && !tile.hasNumber) {
-            if (tile.applyCard(this.selectedCard)) {
-                // Notify server about the move
-                this.socket.emit('gameAction', {
-                    roomId: this.roomId,
-                    action: 'playCard',
-                    data: {
-                        tileIndex,
-                        cardValue: this.selectedCard.value
-                    }
-                });
-                
-                // Move card to discard pile
-                const card = this.selectedCard;
-                this.hand.removeCard(card);
-                this.selectedCard = null;
-                this.discardPile.addCard(card);
-
-                // Update total points from server state
-                this.totalPoints = this.gameState.scores[this.playerId] || 0;
-                this.pointsText.setText(`Total Points: ${this.totalPoints}`);
-
-                // Check game over
-                if (this.gameState.tiles.every(t => t.hasNumber)) {
-                    this.gameOver();
-                }
+        // Only send action to server, don't update local state
+        this.socket.emit('gameAction', {
+            roomId: this.roomId,
+            action: 'playCard',
+            data: {
+                tileIndex,
+                cardValue: this.selectedCard.value
             }
-        } else if (this.selectedCard.type === 'assist') {
-            if (this.selectedCard.value === 'bye-bye') {
-                this.activateByeByeCard(this.selectedCard);
-            } else if (this.selectedCard.value === 'meowster') {
-                this.activateMeowsterCard(this.selectedCard);
-            }
-            // Add other assist card effects here
-        }
+        });
     }
 
     onCardClick(card) {
@@ -948,63 +900,34 @@ export class MainScene extends Phaser.Scene {
         ).setOrigin(0.5);
     }
 
-    updateOpponentStack(deckType, change, animate = false) {
-        const stack = deckType === 'number' ? 
-            this.opponentHand.numberStack : 
-            this.opponentHand.assistStack;
-        
-        // Clear existing cards
-        stack.container.removeAll();
-        
-        // Update count
-        stack.count = Math.max(0, stack.count + change);
-        
-        // Constants for card layout
-        const cardWidth = CARD_DIMENSIONS.width * 0.7;
-        const cardHeight = CARD_DIMENSIONS.height * 0.7;
-        const cardSpacing = 10;
-        const maxVisibleCards = 5;
-        
-        // Create visual representation of cards
-        for (let i = 0; i < Math.min(stack.count, maxVisibleCards); i++) {
-            const cardBack = this.add.container(i * cardSpacing, i * cardSpacing);
-            
-            // Create card back with appropriate texture
-            const cardSprite = this.add.sprite(0, 0, 
-                deckType === 'number' ? ASSET_KEYS.numberCard : ASSET_KEYS.assistCard
-            ).setDisplaySize(cardWidth, cardHeight);
-            
-            cardBack.add(cardSprite);
-            
-            if (animate && i === stack.count - 1) {
-                cardBack.setScale(0);
-                this.tweens.add({
-                    targets: cardBack,
-                    scaleX: 1,
-                    scaleY: 1,
-                    duration: 200,
-                    ease: 'Back.easeOut'
-                });
+    renderGameState(gameState) {
+        this.renderTiles(gameState.tiles);
+        this.renderPlayerHand(gameState.playerHand);
+        this.renderOpponentHands(gameState.opponentHandCounts);
+        this.renderScores(gameState.scores);
+        this.updateTurnIndicator(gameState.currentPlayer === this.playerId);
+    }
+
+    renderTiles(tiles) {
+        tiles.forEach((tileData, index) => {
+            const tile = this.tiles[index];
+            if (tile) {
+                tile.render(tileData);
             }
-            
-            stack.container.add(cardBack);
-        }
-        
-        // Add count text if there are more cards than visible
-        if (stack.count > maxVisibleCards) {
-            const countText = this.add.text(
-                (maxVisibleCards - 1) * cardSpacing + cardWidth/2,
-                (maxVisibleCards - 1) * cardSpacing + cardHeight/2,
-                `+${stack.count - maxVisibleCards}`,
-                {
-                    fontSize: '16px',
-                    color: '#000',
-                    backgroundColor: '#fff',
-                    padding: { x: 4, y: 2 }
-                }
-            ).setOrigin(0.5);
-            
-            stack.container.add(countText);
-        }
+        });
+    }
+
+    renderPlayerHand(cards) {
+        this.hand.render(cards);
+    }
+
+    renderOpponentHands(handCounts) {
+        handCounts.forEach(({ playerId, numberCount, assistCount }) => {
+            this.opponentHand.render({ numberCount, assistCount });
+        });
+    }
+
+    renderScores(scores) {
+        this.pointsText.setText(`Total Points: ${scores[this.playerId] || 0}`);
     }
 } 
