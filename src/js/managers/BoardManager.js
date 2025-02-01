@@ -25,7 +25,7 @@ export class BoardManager {
         const gridHeight = (tileSize * 3) + (tileSpacing * 2);
         
         const centerX = gameWidth / 2;
-        const centerY = gameHeight / 2;
+        const centerY = (gameHeight / 2) - (gameHeight * 0.2);
         const gridStartX = centerX - (gridWidth / 2);
         const gridStartY = centerY - (gridHeight / 2);
 
