@@ -23,21 +23,43 @@ const rooms = new Map();
 // Add new game state structure
 const gameStates = new Map();
 
+// Add this above generateAssistDeck function
+const ASSIST_CARDS = [
+  { type: 'assist', value: 'Bye Bye', effect: 'remove_all_numbers' },
+  { type: 'assist', value: 'Swap', effect: 'swap_tiles' },
+  { type: 'assist', value: 'Double', effect: 'double_points' },
+  { type: 'assist', value: 'Shield', effect: 'block_opponent' },
+  { type: 'assist', value: 'Draw Two', effect: 'draw_extra_cards' }
+];
+
 function initializeGameState(roomId) {
   const gameState = {
     tiles: generateTileLayout(),
     players: new Map(),
     currentPlayer: null,
     scores: {},
-    hands: new Map(), // Store player hands
+    hands: new Map(),
     decks: {
-      number: [],
-      assist: []
+      number: generateNumberDeck(),
+      assist: generateAssistDeck()
     },
     discardPile: []
   };
   gameStates.set(roomId, gameState);
   return gameState;
+}
+
+// Add these deck generation functions
+function generateNumberDeck() {
+  return Array.from({length: 20}, (_, i) => ({
+    type: 'number',
+    value: Math.floor(Math.random() * 10) + 1
+  })).sort(() => Math.random() - 0.5);
+}
+
+function generateAssistDeck() {
+  return ASSIST_CARDS.map(card => ({...card}))
+    .sort(() => Math.random() - 0.5);
 }
 
 // Helper function to get player's room
@@ -145,6 +167,28 @@ io.on('connection', (socket) => {
     });
     
     console.log(`Player ${socket.id} joined room ${roomId}. Players:`, room.players);
+
+    if (room.players.length === 2) {
+      const gameState = initializeGameState(room.id);
+      // Initialize hands for both players
+      room.players.forEach(player => {
+        gameState.hands.set(player.id, []);  // Add empty hand array
+      });
+
+      // Notify players with initialized hand counts
+      room.players.forEach(player => {
+        io.to(player.id).emit('opponentHandUpdate', {
+          roomId: room.id,
+          handCount: room.players
+            .filter(p => p.id !== player.id)
+            .map(p => ({
+              playerId: p.id,
+              numberCount: gameState.hands.get(p.id)?.length || 0,
+              assistCount: 0
+            }))
+        });
+      });
+    }
   });
 
   // Player ready
@@ -168,38 +212,36 @@ io.on('connection', (socket) => {
     if (room.players.length === 2 && room.players.every(p => p.ready)) {
       room.status = 'playing';
       
-      // Initialize game state
-      const gameLayout = generateTileLayout();
-      room.gameState = {
-        tiles: gameLayout.tiles,
-        selectedColors: gameLayout.selectedColors,
-        currentPlayer: room.hostId,
-        scores: {
+      // Get the existing game state from gameStates map
+      const gameState = gameStates.get(roomId);
+      
+      // Initialize game state properly
+      gameState.currentPlayer = room.hostId;
+      gameState.scores = {
           [room.players[0].id]: 0,
           [room.players[1].id]: 0
-        }
       };
 
-      // Start the game
+      // Start the game with the proper game state
       io.to(roomId).emit('gameStart', {
-        roomId,
-        players: room.players.map(p => ({
-          id: p.id,
-          handCount: p.hand.length
-        })),
-        gameState: room.gameState,
-        currentTurn: room.gameState.currentPlayer
+          roomId,
+          players: room.players.map(p => ({
+              id: p.id,
+              handCount: gameState.hands.get(p.id)?.length || 0
+          })),
+          gameState: sanitizeGameState(gameState, room.hostId),
+          currentTurn: gameState.currentPlayer
       });
-      
-      // Send initial hand counts to each player
+
+      // Send initial hand counts using gameState
       room.players.forEach(player => {
-        const opponent = room.players.find(p => p.id !== player.id);
-        if (opponent) {
-          io.to(player.id).emit('opponentHandUpdate', {
-            roomId,
-            handCount: opponent.hand.length
-          });
-        }
+          const opponent = room.players.find(p => p.id !== player.id);
+          if (opponent) {
+              io.to(player.id).emit('opponentHandUpdate', {
+                  roomId,
+                  handCount: gameState.hands.get(opponent.id)?.length || 0
+              });
+          }
       });
       
       console.log(`Game starting in room ${roomId}`);
@@ -353,7 +395,7 @@ function broadcastGameUpdate(roomId, update) {
 // Sanitize game state before sending to client
 function sanitizeGameState(gameState, playerId) {
   return {
-    tiles: gameState.tiles,
+    tiles: gameState.tiles.tiles || [],
     currentPlayer: gameState.currentPlayer,
     scores: gameState.scores,
     playerHand: gameState.hands.get(playerId),
@@ -364,5 +406,34 @@ function sanitizeGameState(gameState, playerId) {
         numberCount: hand.filter(c => c.type === 'number').length,
         assistCount: hand.filter(c => c.type === 'assist').length
       }))
+  };
+}
+
+// Add these functions above the broadcastGameUpdate function
+function validateCardDraw(gameState, playerId, data) {
+  const deck = gameState.decks[data.deckType];
+  return deck && deck.length > 0;
+}
+
+function processCardDraw(gameState, playerId, data) {
+  const deck = gameState.decks[data.deckType];
+  if (!deck || deck.length === 0) return null;
+
+  // Draw card from deck
+  const drawnCard = deck.pop();
+  const hand = gameState.hands.get(playerId);
+  hand.push(drawnCard);
+
+  return {
+    type: 'cardDraw',
+    playerId,
+    data: {
+      deckType: data.deckType,
+      handCount: hand.length,
+      drawnCard: {
+        value: drawnCard.value,
+        type: drawnCard.type
+      }
+    }
   };
 } 
