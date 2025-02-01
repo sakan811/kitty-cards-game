@@ -20,6 +20,26 @@ const io = new Server(httpServer, {
 // Game rooms storage
 const rooms = new Map();
 
+// Add new game state structure
+const gameStates = new Map();
+
+function initializeGameState(roomId) {
+  const gameState = {
+    tiles: generateTileLayout(),
+    players: new Map(),
+    currentPlayer: null,
+    scores: {},
+    hands: new Map(), // Store player hands
+    decks: {
+      number: [],
+      assist: []
+    },
+    discardPile: []
+  };
+  gameStates.set(roomId, gameState);
+  return gameState;
+}
+
 // Helper function to get player's room
 function getPlayerRoom(socketId) {
   for (const [roomId, room] of rooms.entries()) {
@@ -63,27 +83,28 @@ io.on('connection', (socket) => {
   // Create a new room
   socket.on('createRoom', () => {
     const roomId = uuidv4();
-    const room = {
+    const gameState = initializeGameState(roomId);
+    
+    // Initialize player state
+    gameState.players.set(socket.id, {
+      id: socket.id,
+      ready: false
+    });
+    gameState.hands.set(socket.id, []);
+    
+    rooms.set(roomId, {
       id: roomId,
-      players: [{
-        id: socket.id,
-        ready: false,
-        hand: []
-      }],
+      players: [{ id: socket.id, ready: false }],
       status: 'waiting',
-      hostId: socket.id,
-      currentTurn: null,
-      gameState: {
-        tiles: null,
-        selectedColors: null,
-        currentPlayer: null,
-        scores: {}
-      }
-    };
-    rooms.set(roomId, room);
+      hostId: socket.id
+    });
+
     socket.join(roomId);
-    socket.emit('roomCreated', { roomId, playerId: socket.id });
-    console.log(`Room ${roomId} created by ${socket.id}`);
+    socket.emit('roomCreated', { 
+      roomId, 
+      playerId: socket.id,
+      gameState: sanitizeGameState(gameState, socket.id) 
+    });
   });
 
   // Join an existing room
@@ -192,86 +213,27 @@ io.on('connection', (socket) => {
 
   // Handle game actions
   socket.on('gameAction', ({ roomId, action, data }) => {
-    const room = rooms.get(roomId);
-    if (!room || room.status !== 'playing') return;
-    
-    const player = room.players.find(p => p.id === socket.id);
-    if (!player) return;
-
-    // Validate turn
-    if (room.gameState.currentPlayer !== socket.id) {
-      socket.emit('gameError', 'Not your turn');
+    const gameState = gameStates.get(roomId);
+    if (!gameState || gameState.currentPlayer !== socket.id) {
+      socket.emit('gameError', 'Invalid action');
       return;
     }
 
-    // Process the action
     switch (action) {
       case 'playCard':
-        if (data.tileIndex >= 0 && data.tileIndex < room.gameState.tiles.length) {
-          const tile = room.gameState.tiles[data.tileIndex];
-          if (!tile.hasNumber) {
-            tile.hasNumber = true;
-            tile.number = data.cardValue;
-            // Remove card from hand
-            player.hand = player.hand.filter(card => card.value !== data.cardValue);
-            
-            // Notify opponent
-            const opponent = room.players.find(p => p.id !== socket.id);
-            if (opponent) {
-              io.to(opponent.id).emit('opponentAction', {
-                action: 'playCard',
-                data: {
-                  tileIndex: data.tileIndex,
-                  cardValue: data.cardValue,
-                  deckType: 'number'
-                }
-              });
-            }
-          }
+        if (validateCardPlay(gameState, socket.id, data)) {
+          const result = processCardPlay(gameState, socket.id, data);
+          broadcastGameUpdate(roomId, result);
         }
         break;
       
       case 'drawCard':
-        if (data.deckType) {
-          const newCard = {
-            type: data.deckType,
-            value: data.cardValue
-          };
-          player.hand.push(newCard);
-          
-          // Notify opponent immediately about the draw
-          const opponent = room.players.find(p => p.id !== socket.id);
-          if (opponent) {
-            io.to(opponent.id).emit('opponentAction', {
-              action: 'drawCard',
-              data: {
-                deckType: data.deckType,
-                handCount: player.hand.length
-              }
-            });
-          }
+        if (validateCardDraw(gameState, socket.id, data)) {
+          const result = processCardDraw(gameState, socket.id, data);
+          broadcastGameUpdate(roomId, result);
         }
         break;
     }
-
-    // Broadcast the updated game state
-    io.to(roomId).emit('gameUpdate', { 
-      roomId,
-      playerId: socket.id, 
-      action, 
-      data: {
-        ...data,
-        handCount: player.hand.length
-      },
-      gameState: room.gameState
-    });
-
-    // Switch turns
-    room.gameState.currentPlayer = room.players.find(p => p.id !== socket.id).id;
-    io.to(roomId).emit('turnUpdate', {
-      roomId,
-      currentPlayer: room.gameState.currentPlayer
-    });
   });
 
   // Handle disconnection
@@ -335,4 +297,72 @@ function updateOpponentHandCount(room, playerId) {
             handCount: player.hand ? player.hand.length : 0
         });
     }
+}
+
+// Helper functions
+function validateCardPlay(gameState, playerId, data) {
+  const hand = gameState.hands.get(playerId);
+  const tile = gameState.tiles[data.tileIndex];
+  return hand && tile && !tile.hasNumber;
+}
+
+function processCardPlay(gameState, playerId, data) {
+  const hand = gameState.hands.get(playerId);
+  const cardIndex = hand.findIndex(card => card.value === data.cardValue);
+  
+  if (cardIndex === -1) return null;
+  
+  // Remove card from hand
+  const [playedCard] = hand.splice(cardIndex, 1);
+  
+  // Update tile
+  gameState.tiles[data.tileIndex].hasNumber = true;
+  gameState.tiles[data.tileIndex].number = playedCard.value;
+  
+  // Add to discard pile
+  gameState.discardPile.push(playedCard);
+  
+  // Update scores
+  gameState.scores[playerId] = calculateScore(gameState.tiles, playerId);
+  
+  return {
+    type: 'cardPlay',
+    playerId,
+    data: {
+      tileIndex: data.tileIndex,
+      cardValue: playedCard.value,
+      handCount: hand.length,
+      score: gameState.scores[playerId]
+    }
+  };
+}
+
+function broadcastGameUpdate(roomId, update) {
+  const gameState = gameStates.get(roomId);
+  
+  // Broadcast to all players
+  io.to(roomId).emit('gameUpdate', {
+    roomId,
+    action: update.type,
+    playerId: update.playerId,
+    data: update.data,
+    gameState: sanitizeGameState(gameState, update.playerId)
+  });
+}
+
+// Sanitize game state before sending to client
+function sanitizeGameState(gameState, playerId) {
+  return {
+    tiles: gameState.tiles,
+    currentPlayer: gameState.currentPlayer,
+    scores: gameState.scores,
+    playerHand: gameState.hands.get(playerId),
+    opponentHandCounts: Array.from(gameState.hands.entries())
+      .filter(([id]) => id !== playerId)
+      .map(([id, hand]) => ({
+        playerId: id,
+        numberCount: hand.filter(c => c.type === 'number').length,
+        assistCount: hand.filter(c => c.type === 'assist').length
+      }))
+  };
 } 
