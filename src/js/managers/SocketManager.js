@@ -6,109 +6,113 @@ export class SocketManager {
 
     setupSocketListeners() {
         if (!this.socket) {
-            console.error('Cannot setup listeners: Socket not initialized');
+            console.error('No socket available for SocketManager');
             return;
         }
 
-        this.setupGameEventListeners();
-        this.setupTurnEventListeners();
-        this.setupErrorEventListeners();
+        // Game state updates
+        this.socket.on('gameStateUpdate', this.handleGameStateUpdate.bind(this));
+        this.socket.on('turnUpdate', this.handleTurnUpdate.bind(this));
+        this.socket.on('cardDrawn', this.handleCardDrawn.bind(this));
+        this.socket.on('cardPlayed', this.handleCardPlayed.bind(this));
+        this.socket.on('gameError', this.handleGameError.bind(this));
+        this.socket.on('playerLeft', this.handlePlayerLeft.bind(this));
     }
 
-    setupGameEventListeners() {
-        this.socket.on('gameUpdate', ({ action, data, gameState }) => {
-            console.log('Game Update:', action, data);
-            
-            if (action === 'cardDraw' && data.playerId === this.scene.playerId) {
-                this.handleCardDraw(data);
-            }
-            
-            if (gameState) {
-                this.renderGameState(gameState);
-            }
-        });
-
-        this.socket.on('playerLeft', ({ roomId }) => {
-            if (roomId === this.scene.roomId) {
-                this.scene.uiManager.showGameOver('Opponent left the game');
-            }
-        });
+    removeListeners() {
+        if (!this.socket) return;
+        
+        this.socket.off('gameStateUpdate');
+        this.socket.off('turnUpdate');
+        this.socket.off('cardDrawn');
+        this.socket.off('cardPlayed');
+        this.socket.off('gameError');
+        this.socket.off('playerLeft');
     }
 
-    setupTurnEventListeners() {
-        this.socket.on('turnUpdate', ({ currentPlayer, turnPhase }) => {
-            console.log('Turn Update:', { currentPlayer, turnPhase });
-            this.updateGameTurn(currentPlayer, turnPhase);
-        });
-    }
-
-    setupErrorEventListeners() {
-        this.socket.on('gameError', (error) => {
-            console.error('Game Error:', error);
-            this.scene.uiManager.showErrorMessage(error);
-        });
-    }
-
-    handleCardDraw(data) {
-        const { cardType, cardValue } = data;
-        // Handle card draw animation or UI update
-        this.scene.hand.addCard(cardType, cardValue);
-    }
-
-    renderGameState(gameState) {
+    handleGameStateUpdate(gameState) {
         if (!gameState) {
             console.error('Invalid game state received');
             return;
         }
 
-        console.log('Rendering game state:', gameState);
-
-        if (gameState.tiles) this.renderTiles(gameState.tiles);
-        if (gameState.hands?.[this.scene.playerId]) this.renderPlayerHand(gameState.hands[this.scene.playerId]);
-        if (gameState.scores) this.renderScores(gameState.scores);
-        if (gameState.currentPlayer) {
-            this.scene.isPlayerTurn = gameState.currentPlayer === this.scene.playerId;
-            this.scene.updateTurnState();
+        this.scene.gameState = gameState;
+        this.scene.updateTurnState();
+        
+        // Update board and UI
+        if (this.scene.boardManager) {
+            this.scene.boardManager.updateBoard(gameState);
+        }
+        if (this.scene.uiManager) {
+            this.scene.uiManager.updateUI(gameState);
         }
     }
 
-    renderTiles(tiles) {
-        if (!Array.isArray(tiles)) {
-            console.error('Invalid tiles data:', tiles);
-            return;
-        }
+    handleTurnUpdate({ currentPlayer, currentPhase }) {
+        this.scene.gameState.currentPlayer = currentPlayer;
+        this.scene.gameState.currentPhase = currentPhase;
+        this.scene.updateTurnState();
+    }
 
-        tiles.forEach((tileData, index) => {
-            const tile = this.scene.tiles[index];
-            if (tile?.render) {
-                tile.render(tileData);
+    handleCardDrawn({ playerId, card, deckType }) {
+        if (playerId === this.scene.playerId) {
+            if (this.scene.uiManager) {
+                this.scene.uiManager.addCardToHand(card);
             }
+        }
+        
+        if (this.scene.boardManager) {
+            this.scene.boardManager.updateDeck(deckType);
+        }
+    }
+
+    handleCardPlayed({ playerId, card, tileIndex }) {
+        if (playerId === this.scene.playerId) {
+            if (this.scene.uiManager) {
+                this.scene.uiManager.removeCardFromHand(card);
+            }
+        }
+        
+        if (this.scene.boardManager) {
+            this.scene.boardManager.updateTile(tileIndex, card);
+        }
+    }
+
+    handleGameError(error) {
+        console.error('Game error:', error);
+        if (this.scene.uiManager) {
+            this.scene.uiManager.showError(error);
+        }
+    }
+
+    handlePlayerLeft() {
+        if (this.scene.uiManager) {
+            this.scene.uiManager.showError('Other player left the game');
+        }
+        
+        // Disable all interactions
+        this.scene.disableAllInteractions();
+        
+        // Return to lobby after a delay
+        this.scene.time.delayedCall(3000, () => {
+            this.scene.scene.start('LobbyScene');
         });
     }
 
-    renderPlayerHand(handData) {
-        if (!handData || !this.scene.hand) {
-            console.warn('Cannot render hand: missing data or hand not initialized');
-            return;
-        }
-
-        const cards = handData.map(card => ({
-            type: card.type,
-            value: card.value
-        }));
-
-        this.scene.hand.render(cards);
+    // Methods for sending events to the server
+    drawCard(deckType) {
+        this.socket.emit('drawCard', {
+            deckType,
+            roomId: this.scene.roomId
+        });
     }
 
-    renderScores(scores) {
-        if (this.scene.uiManager.pointsText) {
-            this.scene.uiManager.updateScore(scores[this.scene.playerId] || 0);
-        }
-    }
-
-    updateGameTurn(currentPlayer, turnPhase) {
-        this.scene.currentPhase = turnPhase;
-        this.scene.isPlayerTurn = currentPlayer === this.scene.playerId;
-        this.scene.updateTurnState();
+    playCard(card, tileIndex) {
+        this.socket.emit('playCard', {
+            cardType: card.type,
+            cardValue: card.value,
+            tileIndex,
+            roomId: this.scene.roomId
+        });
     }
 } 
