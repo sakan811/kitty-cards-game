@@ -286,7 +286,18 @@ export class LobbyScene extends Phaser.Scene {
             this.readyButton.setFillStyle(0x666666);
             this.readyButton.disableInteractive();
             readyText.disableInteractive();
-            readyText.setText('Waiting for opponent...');
+            
+            // Create waiting text above the button
+            const waitingText = this.add.text(400, 370, 'Waiting for opponent...', {
+                fontSize: '18px',
+                color: '#666666',
+                backgroundColor: '#ffffff',
+                padding: { x: 10, y: 5 }
+            }).setOrigin(0.5);
+            this.waitingContainer.add(waitingText);
+            
+            // Keep the ready text as is, just disable it
+            readyText.setAlpha(0.6);
         };
 
         this.readyButton.on('pointerdown', onReady);
@@ -326,7 +337,6 @@ export class LobbyScene extends Phaser.Scene {
                 // Find and update the ready text
                 this.waitingContainer.list.forEach(child => {
                     if (child.type === 'Text' && child.text === 'Ready') {
-                        child.setText('Waiting for opponent...');
                         child.disableInteractive();
                     }
                 });
