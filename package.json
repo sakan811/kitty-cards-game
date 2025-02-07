@@ -6,22 +6,37 @@
   "scripts": {
     "test": "vitest",
     "start": "node server/app.js",
-    "start:dev": "cross-env NODE_ENV=development node server/app.js"
+    "start:dev": "cross-env NODE_ENV=development node server/app.js",
+    "dev": "vite",
+    "build": "vite build",
+    "build:css": "tailwindcss -i ./src/styles/main.css -o ./src/styles/output.css --watch"
   },
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@types/react-router-dom": "^5.3.3",
+    "@types/socket.io-client": "^3.0.0",
     "express": "^4.18.2",
     "express-rate-limit": "^7.5.0",
-    "phaser": "^3.88.2",
+    "phaser": "^3.87.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.1.5",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "uuid": "^11.0.5"
   },
   "devDependencies": {
+    "@types/react": "^18.2.55",
+    "@types/react-dom": "^18.2.19",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.17",
     "cross-env": "^7.0.3",
     "jsdom": "^26.0.0",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1",
+    "vite": "^5.1.0",
     "vitest": "^3.0.5"
   }
 }
