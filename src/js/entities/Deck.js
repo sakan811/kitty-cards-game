@@ -1,86 +1,224 @@
-import { DECK_VALUES, CARD_DIMENSIONS, ASSET_KEYS } from '../config/constants.js';
+import { CARD_DIMENSIONS, ASSET_KEYS } from '../config/constants.js';
 import { Card } from './Card.js';
 
-export class Deck {
+export class Deck extends Phaser.GameObjects.Container {
     constructor(scene, x, y, type) {
-        this.scene = scene;
+        super(scene, x, y);
+        scene.add.existing(this);
+        
         this.type = type;
-        this.x = x;
-        this.y = y;
-        this.cards = this.createCards(); // Initialize cards array
-        this.visual = scene.add.image(x, y, type === 'number' ? ASSET_KEYS.numberCard : ASSET_KEYS.assistCard)
-            .setDisplaySize(CARD_DIMENSIONS.width, CARD_DIMENSIONS.height)
-            .setDepth(1) // Set base depth for deck
-            .setInteractive({ useHandCursor: true })
-            .on('pointerdown', () => this.handleDraw());
+        this.isAnimating = false;
+        this.baseScale = 0.5;
+        
+        this.createVisual();
+        this.setupInteraction();
     }
 
-    handleDraw() {
-        // Remove direct card drawing logic and only emit event to server
-        if (!this.scene.isPlayerTurn) {
-            console.log('Not your turn!');
-            return;
+    createVisual() {
+        // Create deck sprite with shadow effect
+        const shadow = this.scene.add.sprite(2, 2, this.type === 'number' ? ASSET_KEYS.numberCard : ASSET_KEYS.assistCard)
+            .setDisplaySize(CARD_DIMENSIONS.width * this.baseScale, CARD_DIMENSIONS.height * this.baseScale)
+            .setTint(0x000000)
+            .setAlpha(0.3);
+
+        this.visual = this.scene.add.sprite(0, 0, this.type === 'number' ? ASSET_KEYS.numberCard : ASSET_KEYS.assistCard)
+            .setDisplaySize(CARD_DIMENSIONS.width * this.baseScale, CARD_DIMENSIONS.height * this.baseScale);
+
+        // Add stacked card effect
+        for (let i = 1; i <= 3; i++) {
+            const stackedCard = this.scene.add.sprite(-i, -i, this.type === 'number' ? ASSET_KEYS.numberCard : ASSET_KEYS.assistCard)
+                .setDisplaySize(CARD_DIMENSIONS.width * this.baseScale, CARD_DIMENSIONS.height * this.baseScale)
+                .setDepth(-i);
         }
 
-        // Emit draw request to server and wait for response
-        this.scene.socket.emit('gameAction', {
-            roomId: this.scene.roomId,
-            action: 'drawCard',
-            data: {
-                deckType: this.type
+        // Add all elements to container
+        this.add([shadow, this.visual]);
+        this.setDepth(1);
+    }
+
+    setupInteraction() {
+        this.setInteractive({ 
+            hitArea: new Phaser.Geom.Rectangle(
+                -CARD_DIMENSIONS.width * this.baseScale / 2,
+                -CARD_DIMENSIONS.height * this.baseScale / 2,
+                CARD_DIMENSIONS.width * this.baseScale,
+                CARD_DIMENSIONS.height * this.baseScale
+            ),
+            hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+            useHandCursor: true
+        });
+
+        this.on('pointerdown', () => {
+            if (!this.isAnimating) {
+                this.handleDraw();
+            }
+        });
+
+        this.on('pointerover', () => {
+            if (!this.isAnimating) {
+                this.scene.tweens.add({
+                    targets: this,
+                    scaleX: 1.1,
+                    scaleY: 1.1,
+                    y: this.y - 5,
+                    duration: 200,
+                    ease: 'Power2'
+                });
+            }
+        });
+
+        this.on('pointerout', () => {
+            if (!this.isAnimating) {
+                this.scene.tweens.add({
+                    targets: this,
+                    scaleX: 1,
+                    scaleY: 1,
+                    y: this.y + 5,
+                    duration: 200,
+                    ease: 'Power2'
+                });
             }
         });
     }
 
-    setInteractive(enabled) {
-        if (enabled) {
-            this.visual.setInteractive({ useHandCursor: true });
-        } else {
-            this.visual.disableInteractive();
+    async handleDraw() {
+        if (this.isAnimating) {
+            console.log('Deck is already animating, ignoring draw request');
+            return;
+        }
+        
+        console.log('Starting draw animation');
+        this.isAnimating = true;
+
+        try {
+            // Shake deck effect
+            await new Promise(resolve => {
+                this.scene.tweens.add({
+                    targets: this,
+                    x: this.x - 2,
+                    yoyo: true,
+                    duration: 50,
+                    repeat: 2,
+                    onComplete: resolve
+                });
+            });
+
+            // Request card draw from server
+            console.log('Shake animation complete, requesting card from server');
+            this.scene.socketManager.drawCard(this.type);
+
+        } catch (error) {
+            console.error('Error during draw animation:', error);
+        } finally {
+            // Re-enable interaction after a delay
+            this.scene.time.delayedCall(500, () => {
+                console.log('Re-enabling deck interaction');
+                this.isAnimating = false;
+            });
         }
     }
 
-    createCards() {
-        const values = DECK_VALUES[this.type];
-        if (!values) {
-            console.error(`No values defined for deck type: ${this.type}`);
-            return [];
-        }
-        const pairs = 2; // Each value appears twice
-        return Phaser.Utils.Array.Shuffle(Array(pairs).fill(values).flat());
-    }
-
-    createVisual() {
-        const texture = this.type === 'number' ? 'number-card' : 'assist-card';
-        this.visual = this.scene.add.image(this.x, this.y, texture)
-            .setDisplaySize(CARD_DIMENSIONS.width, CARD_DIMENSIONS.height)
-            .setInteractive();
-
-        // Add deck label
-        const label = `${this.type.charAt(0).toUpperCase() + this.type.slice(1)} Deck`;
-        this.label = this.scene.add.text(this.x, this.y + 90, label, {
-            fontSize: '20px',
-            color: '#000',
-            align: 'center'
-        }).setOrigin(0.5);
-    }
-
-    drawCard() {
-        if (!this.cards || this.cards.length === 0) {
-            this.showEmptyDeckWarning();
-            return null;
+    async animateCardToHand(cardData) {
+        if (!cardData) {
+            console.error('No card data provided for animation');
+            return;
         }
 
-        const value = this.cards.pop();
-        return new Card(this.scene, this.x, this.y, this.type, value);
-    }
+        console.log('Starting card animation to hand:', cardData);
+        
+        // Create the card and add it to the scene
+        const card = new Card(
+            this.scene,
+            this.x,
+            this.y,
+            cardData.type || this.type,
+            cardData.value
+        );
+        
+        // Set initial scale and make sure card is visible
+        card.setScale(this.baseScale);
+        card.setVisible(true);
+        card.setActive(true);
+        
+        // Get hand position
+        const handPosition = this.scene.hand?.getNextCardPosition();
+        if (!handPosition) {
+            console.error('Could not get hand position');
+            card.destroy();
+            return;
+        }
 
-    showEmptyDeckWarning() {
-        this.scene.showWarning('Deck is empty!');
+        console.log('Animating card to position:', handPosition);
+
+        // Calculate control points for bezier curve
+        const controlPoint1 = {
+            x: this.x + (handPosition.x - this.x) * 0.25,
+            y: Math.min(this.y, handPosition.y) - 100
+        };
+
+        const controlPoint2 = {
+            x: this.x + (handPosition.x - this.x) * 0.75,
+            y: Math.min(this.y, handPosition.y) - 50
+        };
+
+        // Make sure the card is above other elements during animation
+        card.setDepth(1000);
+
+        // Animate card along bezier curve
+        return new Promise((resolve, reject) => {
+            try {
+                this.scene.tweens.add({
+                    targets: card,
+                    x: {
+                        value: handPosition.x,
+                        duration: 500,
+                        ease: (t) => {
+                            const mt = 1 - t;
+                            return (mt * mt * mt * this.x) +
+                                   (3 * mt * mt * t * controlPoint1.x) +
+                                   (3 * mt * t * t * controlPoint2.x) +
+                                   (t * t * t * handPosition.x);
+                        }
+                    },
+                    y: {
+                        value: handPosition.y,
+                        duration: 500,
+                        ease: (t) => {
+                            const mt = 1 - t;
+                            return (mt * mt * mt * this.y) +
+                                   (3 * mt * mt * t * controlPoint1.y) +
+                                   (3 * mt * t * t * controlPoint2.y) +
+                                   (t * t * t * handPosition.y);
+                        }
+                    },
+                    scale: 1,
+                    angle: 360,
+                    onComplete: async () => {
+                        try {
+                            console.log('Card animation complete, adding to hand');
+                            if (this.scene.hand) {
+                                await this.scene.hand.addCard(card);
+                                console.log('Card successfully added to hand');
+                            } else {
+                                throw new Error('Hand not found in scene');
+                            }
+                            resolve();
+                        } catch (error) {
+                            console.error('Error in animation completion:', error);
+                            card.destroy();
+                            reject(error);
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error setting up card animation:', error);
+                card.destroy();
+                reject(error);
+            }
+        });
     }
 
     destroy() {
-        if (this.visual?.active) this.visual.destroy();
-        if (this.label?.active) this.label.destroy();
+        super.destroy();
     }
 } 

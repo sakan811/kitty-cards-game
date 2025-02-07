@@ -1,32 +1,139 @@
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply m-0 p-0 box-border;
+  }
+
+  html, body {
+    @apply m-0 p-0 min-h-screen bg-gray-900 text-white;
+  }
+
+  #root {
+    @apply min-h-screen;
+  }
+
+  #game-container {
+    @apply absolute top-0 left-0 w-full h-full flex justify-center items-center m-0 p-0;
+  }
+
+  canvas {
+    @apply block mx-auto;
+  }
 }
 
-html, body {
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    background: #fff;
-    width: 100%;
-    height: 100%;
+/* Custom Phaser UI Classes */
+@layer components {
+  .phaser-input {
+    @apply w-full h-12 px-4 py-2 text-lg font-sans text-center 
+           bg-white bg-opacity-95 text-gray-800
+           border-2 border-gray-600 rounded-lg
+           shadow-sm transition-all duration-200
+           focus:border-blue-500 focus:ring-2 focus:ring-blue-300
+           hover:border-gray-500 hover:shadow-md;
+  }
+
+  .phaser-button {
+    @apply px-6 py-3 text-lg font-sans text-center text-white
+           rounded-lg shadow-sm transition-all duration-200
+           hover:scale-105 active:scale-95;
+  }
+
+  .phaser-button-primary {
+    @apply bg-blue-500 hover:bg-blue-600;
+  }
+
+  .phaser-button-success {
+    @apply bg-green-500 hover:bg-green-600;
+  }
+
+  .phaser-button-secondary {
+    @apply bg-gray-500 hover:bg-gray-600;
+  }
 }
 
-#game-container {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    margin: 0;
-    padding: 0;
+/* Game Component Classes */
+@layer components {
+  .game-container {
+    @apply w-full min-h-screen bg-gray-900 flex items-center justify-center relative;
+  }
+
+  .game-canvas {
+    @apply w-full h-full max-w-4xl max-h-[80vh];
+  }
 }
 
-canvas {
-    display: block;
-    margin: 0 auto;
+/* Lobby Component Classes */
+@layer components {
+  .lobby-container {
+    @apply min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-4;
+  }
+
+  .lobby-title {
+    @apply text-4xl font-bold mb-8 text-center text-white;
+  }
+
+  .lobby-error {
+    @apply bg-red-500 text-white p-3 rounded mb-4 text-center max-w-md mx-auto;
+  }
+
+  .lobby-menu {
+    @apply flex flex-col gap-4 w-full max-w-md mx-auto;
+  }
+
+  .lobby-button {
+    @apply font-bold py-3 px-6 rounded-lg transition duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-opacity-50;
+  }
+
+  .lobby-button-blue {
+    @apply bg-blue-600 hover:bg-blue-700 text-white focus:ring-blue-500;
+  }
+
+  .lobby-button-green {
+    @apply bg-green-600 hover:bg-green-700 text-white focus:ring-green-500;
+  }
+
+  .lobby-button-gray {
+    @apply bg-gray-600 hover:bg-gray-700 text-white focus:ring-gray-500;
+  }
+
+  .lobby-input {
+    @apply w-full bg-gray-800 text-white px-4 py-3 rounded-lg 
+           focus:outline-none focus:ring-2 focus:ring-blue-500
+           border border-gray-700;
+  }
+
+  .lobby-room-info {
+    @apply bg-gray-800 p-4 rounded-lg text-center mb-4;
+  }
+
+  .lobby-room-code {
+    @apply text-2xl font-mono bg-gray-700 px-3 py-1 rounded;
+  }
+
+  .lobby-copy-button {
+    @apply bg-gray-700 hover:bg-gray-600 p-2 rounded transition duration-200;
+  }
+
+  .lobby-players-list {
+    @apply bg-gray-800 p-4 rounded-lg w-full;
+  }
+
+  .lobby-player-item {
+    @apply flex items-center justify-between bg-gray-700 p-3 rounded mb-2 last:mb-0;
+  }
+
+  .lobby-player-status {
+    @apply px-3 py-1 rounded text-sm font-semibold;
+  }
+
+  .lobby-player-ready {
+    @apply bg-green-600 text-white;
+  }
+
+  .lobby-player-not-ready {
+    @apply bg-red-600 text-white;
+  }
 } 
