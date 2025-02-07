@@ -4,52 +4,43 @@ export class Room {
     constructor(id, hostId) {
         this.id = id;
         this.hostId = hostId;
-        this.players = [{
-            id: hostId,
-            ready: false
-        }];
-        this.status = 'waiting';
+        this.players = [{ id: hostId, ready: false }];
+        this.gameStarted = false;
     }
 
     addPlayer(playerId) {
-        if (this.players.length >= GAME_CONFIG.maxPlayers) {
+        if (this.players.length >= 2) {
             throw new Error('Room is full');
         }
-        if (this.status !== 'waiting') {
-            throw new Error('Game already in progress');
+        if (!this.players.some(p => p.id === playerId)) {
+            this.players.push({ id: playerId, ready: false });
         }
-        this.players.push({
-            id: playerId,
-            ready: false
-        });
     }
 
     removePlayer(playerId) {
         this.players = this.players.filter(p => p.id !== playerId);
-        if (this.players.length === 0) {
-            this.status = 'closed';
-        } else if (playerId === this.hostId && this.players.length > 0) {
+        if (playerId === this.hostId && this.players.length > 0) {
             this.hostId = this.players[0].id;
         }
     }
 
-    setPlayerReady(playerId) {
+    setPlayerReady(playerId, readyState = true) {
         const player = this.players.find(p => p.id === playerId);
         if (player) {
-            player.ready = true;
+            player.ready = readyState;
+            console.log(`Player ${playerId} ready state set to ${readyState}`);
+        } else {
+            console.error(`Player ${playerId} not found in room`);
+            throw new Error('Player not found in room');
         }
     }
 
     areAllPlayersReady() {
-        return this.players.length === GAME_CONFIG.minPlayers && 
-               this.players.every(p => p.ready);
+        return this.players.length === 2 && this.players.every(p => p.ready);
     }
 
     startGame() {
-        if (!this.areAllPlayersReady()) {
-            throw new Error('Not all players are ready');
-        }
-        this.status = 'playing';
+        this.gameStarted = true;
     }
 
     getPlayerIds() {
