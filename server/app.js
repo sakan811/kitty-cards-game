@@ -11,7 +11,18 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-    cors: SERVER_CONFIG.cors
+    cors: SERVER_CONFIG.cors,
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    connectTimeout: 30000,
+    connectionStateRecovery: {
+        // the backup duration of the sessions and the packets
+        maxDisconnectionDuration: 2 * 60 * 1000,
+        // whether to skip middlewares upon successful recovery
+        skipMiddlewares: true,
+    },
+    // Enable detailed debug logging
+    debug: process.env.NODE_ENV === 'development'
 });
 
 // Configure rate limiter for production only
@@ -41,6 +52,17 @@ app.get('*', (req, res) => {
 
 // Setup Socket.IO handlers
 setupSocketHandlers(io);
+
+// Add middleware to track socket state
+io.use((socket, next) => {
+    console.log('Socket middleware - connection attempt:', socket.id);
+    const roomId = socket.handshake.auth.roomId;
+    if (roomId) {
+        console.log('Socket attempting to join room:', roomId);
+        socket.roomId = roomId;
+    }
+    next();
+});
 
 // Start server
 httpServer.listen(SERVER_CONFIG.port, () => {
