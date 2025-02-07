@@ -1,136 +1,102 @@
 import { SocketManager } from '../managers/SocketManager.js';
 import { BoardManager } from '../managers/BoardManager.js';
 import { UIManager } from '../managers/UIManager.js';
+import { GameStateManager } from '../managers/GameStateManager.js';
+import { EventHandler } from '../managers/EventHandler.js';
+import { TurnManager } from '../managers/TurnManager.js';
+import socketService from '../services/SocketService.js';
 
 export class MainScene extends Phaser.Scene {
     constructor() {
         super({ key: 'MainScene' });
-        this.initializeProperties();
-    }
-
-    initializeProperties() {
-        // Core game properties
-        this.playerId = null;
-        this.opponentId = null;
-        this.roomId = null;
-        this.socket = null;
-        this.gameState = null;
-
-        // Managers
-        this.socketManager = null;
-        this.boardManager = null;
-        this.uiManager = null;
-
-        // Game state
-        this.selectedCard = null;
-        this.isPlayerTurn = false;
-        this.currentPhase = null;
     }
 
     init(data) {
         console.log('MainScene init with data:', data);
-        if (!data?.socket) {
-            console.error('No socket provided to MainScene');
+        
+        // Validate required game data
+        if (!data?.socket || !data?.roomCode || !data?.players) {
+            console.error('Missing required game data');
             this.scene.start('LobbyScene');
             return;
         }
 
-        this.initializeGameState(data);
-        this.socketManager = new SocketManager(this);
-        this.socketManager.setupSocketListeners();
+        this.socket = data.socket;
+        this.roomCode = data.roomCode;
+        this.players = data.players;
+        this.currentTurn = data.currentTurn;
 
+        // Initialize managers
+        this.gameStateManager = new GameStateManager(this);
+        this.socketManager = new SocketManager(this);
+        this.eventHandler = new EventHandler(this);
+
+        // Setup scene cleanup
         this.events.once('shutdown', () => {
+            console.log('MainScene shutting down');
             if (this.socketManager) {
                 this.socketManager.removeListeners();
             }
         });
-    }
 
-    initializeGameState(data) {
-        this.socket = data.socket;
-        this.roomId = data.roomId;
-        this.playerId = data.playerId;
-        
-        if (data.players) {
-            this.opponentId = data.players.find(p => p.id !== this.playerId)?.id;
-        }
-
-        if (data.gameState) {
-            this.gameState = data.gameState;
-            this.isPlayerTurn = data.gameState.currentPlayer === this.playerId;
-            this.currentPhase = data.gameState.currentPhase;
-        } else {
-            console.error('No game state provided');
-            this.scene.start('LobbyScene');
-        }
-    }
-
-    create() {
-        if (!this.validateGameState()) {
+        // Verify socket connection
+        if (!this.socket.connected) {
+            console.warn('Socket not connected in MainScene init');
             this.scene.start('LobbyScene');
             return;
         }
 
-        this.boardManager = new BoardManager(this);
-        this.uiManager = new UIManager(this);
+        // Initialize game state
+        if (!this.gameStateManager.initializeGameState(data)) {
+            console.error('Failed to initialize game state');
+            this.scene.start('LobbyScene');
+            return;
+        }
+    }
 
+    create() {
+        // Remove any existing DOM elements from the lobby
+        const existingInput = document.querySelector('input');
+        if (existingInput) existingInput.remove();
+        const existingButtons = document.querySelectorAll('button');
+        existingButtons.forEach(button => button.remove());
+
+        // Create game elements in order
+        this.boardManager = new BoardManager(this);
+        
+        // Ensure game state is accessible to board manager
+        this.gameState = this.gameStateManager.gameState;
+        
+        this.uiManager = new UIManager(this);
+        this.turnManager = new TurnManager(this);
+
+        // Create the game board first
         this.boardManager.createGameBoard();
-        this.boardManager.createPlayerArea();
+        
+        // Create UI elements after board is set up
         this.uiManager.createUIElements();
         
-        this.updateTurnState();
+        this.eventHandler.setupGameListeners();
         console.log('Game scene created successfully');
+
+        // Emit ready event to server
+        this.socket.emit('gameSceneReady', this.roomCode);
     }
 
-    validateGameState() {
-        if (!this.gameState) {
-            console.error('No game state available');
-            return false;
-        }
-        return true;
-    }
-
-    updateTurnState() {
-        this.isPlayerTurn = this.gameState.currentPlayer === this.playerId;
-        this.currentPhase = this.gameState.currentPhase;
-        
-        if (this.uiManager) {
-            this.uiManager.updateTurnIndicator();
-        }
-        if (this.boardManager) {
-            this.boardManager.updateDeckInteractions();
-        }
-    }
-
-    onDeckClick(deck) {
-        if (!this.canDrawCard(deck)) return;
-        this.socketManager.drawCard(deck.type);
-    }
-
-    canDrawCard(deck) {
-        if (!this.isPlayerTurn) {
-            this.uiManager?.showWarning("It's not your turn!");
-            return false;
-        }
-
-        if (this.currentPhase !== 'draw') {
-            this.uiManager?.showWarning("You can't draw cards in this phase!");
-            return false;
-        }
-
-        return true;
+    // Delegate all interactions to TurnManager
+    onCardSelect(card) {
+        this.turnManager.onCardSelect(card);
     }
 
     onTileClick(tile, tileIndex) {
-        if (!this.selectedCard || !this.isPlayerTurn) return;
-        this.socketManager.playCard(this.selectedCard, tileIndex);
+        this.turnManager.onTileClick(tile, tileIndex);
     }
 
-    enableAllInteractions() {
-        this.boardManager?.enableInteractions();
+    onEndTurnClick() {
+        this.turnManager.onEndTurnClick();
     }
 
-    disableAllInteractions() {
-        this.boardManager?.disableInteractions();
+    onExitClick() {
+        this.turnManager.onExitClick();
     }
 } 

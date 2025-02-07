@@ -7,156 +7,291 @@ import { DiscardPile } from '../entities/DiscardPile.js';
 export class BoardManager {
     constructor(scene) {
         this.scene = scene;
+        this.tiles = [];
+        this.decks = {
+            assist: null,
+            number: null
+        };
+        this.playerHand = [];
     }
 
     createGameBoard() {
-        const { positions, dimensions } = this.calculateBoardLayout();
-        this.createTiles(positions);
-        this.createDecks(dimensions);
+        // Create the 3x3 board layout
+        this.createTiles();
+        // Create decks in the middle tile
+        this.createDecks();
     }
 
-    calculateBoardLayout() {
-        const gameWidth = this.scene.scale.width;
-        const gameHeight = this.scene.scale.height;
+    createTiles() {
+        const tileSize = 120;
+        const padding = 10;
+        const boardWidth = tileSize * 3 + padding * 2;
+        const boardHeight = tileSize * 3 + padding * 2;
+        const startX = (this.scene.game.config.width - boardWidth) / 2;
+        const startY = (this.scene.game.config.height - boardHeight) / 2;
+
+        // Get available cup colors
+        const cupColors = ['brown', 'green', 'purple', 'red', 'white'];
         
-        const tileSize = Math.min(gameWidth, gameHeight) * 0.12;
-        const tileSpacing = tileSize * 0.15;
-        const gridWidth = (tileSize * 3) + (tileSpacing * 2);
-        const gridHeight = (tileSize * 3) + (tileSpacing * 2);
+        // Randomly select 4 positions (excluding middle) for colored cups
+        const positions = [0, 1, 2, 3, 5, 6, 7, 8];
+        const coloredPositions = positions.sort(() => Math.random() - 0.5).slice(0, 4);
         
-        const centerX = gameWidth / 2;
-        const centerY = (gameHeight / 2) - (gameHeight * 0.2);
-        const gridStartX = centerX - (gridWidth / 2);
-        const gridStartY = centerY - (gridHeight / 2);
+        // Create visual tiles
+        for (let i = 0; i < 9; i++) {
+            const row = Math.floor(i / 3);
+            const col = i % 3;
+            const x = startX + col * (tileSize + padding) + tileSize / 2;
+            const y = startY + row * (tileSize + padding) + tileSize / 2;
 
-        const positions = this.calculateTilePositions(gridStartX, gridStartY, tileSize, tileSpacing);
+            // Skip middle tile (index 4)
+            if (i === 4) {
+                const tile = this.createTile(x, y, tileSize, { index: i });
+                this.tiles[i] = tile;
+                continue;
+            }
 
-        return { 
-            positions, 
-            dimensions: { 
-                gridWidth, 
-                gridHeight, 
-                centerX, 
-                centerY, 
-                gridStartY 
-            } 
-        };
+            // Determine cup color
+            let cupColor = 'white';
+            if (coloredPositions.includes(i)) {
+                const randomIndex = Math.floor(Math.random() * cupColors.length);
+                cupColor = cupColors.splice(randomIndex, 1)[0];
+            }
+
+            const tileData = {
+                index: i,
+                cupColor: cupColor,
+                hasNumber: false
+            };
+            
+            const tile = this.createTile(x, y, tileSize, tileData);
+            this.tiles[i] = tile;
+        }
     }
 
-    calculateTilePositions(startX, startY, tileSize, spacing) {
-        return [
-            // Top row
-            { x: startX, y: startY },
-            { x: startX + tileSize + spacing, y: startY },
-            { x: startX + (tileSize * 2) + (spacing * 2), y: startY },
-            
-            // Middle row (sides only)
-            { x: startX, y: startY + spacing + tileSize },
-            { x: startX + (tileSize * 2) + (spacing * 2), y: startY + spacing + tileSize },
-            
-            // Bottom row
-            { x: startX, y: startY + (tileSize * 2) + (spacing * 2) },
-            { x: startX + tileSize + spacing, y: startY + (tileSize * 2) + (spacing * 2) },
-            { x: startX + (tileSize * 2) + (spacing * 2), y: startY + (tileSize * 2) + (spacing * 2) }
-        ];
-    }
+    createTile(x, y, size, tileData) {
+        // Create tile background
+        const tile = this.scene.add.rectangle(x, y, size, size, 0x333333);
+        tile.setStrokeStyle(2, 0x666666);
+        tile.setInteractive();
+        tile.index = tileData.index;
 
-    createTiles(positions) {
-        const tilesData = this.scene.gameState.tiles || Array(8).fill().map(() => ({
-            cupColor: 'cup-white',
-            hasCup: true,
-            value: null
-        }));
+        // Create cup sprite if not middle tile
+        if (tileData.index !== 4) {
+            const cupKey = `cup-${tileData.cupColor}`;
+            const cup = this.scene.add.image(x, y, cupKey);
+            cup.setScale(0.8);
+            tile.cup = cup;
+        }
 
-        this.scene.tiles = tilesData.map((tileData, index) => {
-            const pos = positions[index];
-            const validTileData = this.validateTileData(tileData);
-            
-            return new Tile(
-                this.scene,
-                pos.x + (CARD_DIMENSIONS.width/2),
-                pos.y + (CARD_DIMENSIONS.height/2),
-                index,
-                validTileData.cupColor
-            );
+        // Add number if exists
+        if (tileData.hasNumber) {
+            this.addNumberToTile(tile, tileData.number);
+        }
+
+        // Add click handler
+        tile.on('pointerdown', () => {
+            this.scene.onTileClick(tileData, tileData.index);
         });
+
+        return tile;
     }
 
-    validateTileData(tileData) {
-        return {
-            cupColor: tileData?.cupColor || 'cup-white',
-            hasCup: tileData?.hasCup ?? true,
-            value: tileData?.value || null
-        };
-    }
+    createDecks() {
+        const middleTile = this.tiles[4]; // Middle tile
+        const spacing = 40;
 
-    createPlayerArea() {
-        this.createPlayerHand();
-        this.createDiscardPile();
-    }
+        // Create assist deck using assist card back image
+        this.decks.assist = this.createDeck(
+            middleTile.x - spacing,
+            middleTile.y,
+            'assist-card-back',
+            () => this.handleDeckClick('assist')
+        );
 
-    createPlayerHand() {
-        const handY = this.scene.scale.height - HAND_CONFIG.height - 10;
-        this.scene.hand = new Hand(this.scene, 10, handY, this.scene.scale.width - 20);
-    }
-
-    createDiscardPile() {
-        const discardX = this.scene.hand.x + this.scene.hand.width + CARD_DIMENSIONS.width/2 + 20;
-        this.scene.discardPile = new DiscardPile(
-            this.scene,
-            discardX,
-            this.scene.hand.y + CARD_DIMENSIONS.height/2
+        // Create number deck using number card back image
+        this.decks.number = this.createDeck(
+            middleTile.x + spacing,
+            middleTile.y,
+            'number-card-back',
+            () => this.handleDeckClick('number')
         );
     }
 
-    createDecks({ centerX, gridWidth, gridStartY }) {
-        const deckY = gridStartY + (gridWidth / 2);
-        
-        this.scene.decks = {
-            number: new Deck(this.scene, centerX - (gridWidth * 0.8), deckY, 'number'),
-            assist: new Deck(this.scene, centerX + (gridWidth * 0.8), deckY, 'assist')
-        };
+    createDeck(x, y, texture, onClick) {
+        const deck = this.scene.add.image(x, y, texture);
+        deck.setScale(0.5); // Adjust scale to fit the middle tile
+        deck.setInteractive();
+        deck.on('pointerdown', onClick);
+        return deck;
+    }
 
-        Object.values(this.scene.decks).forEach(deck => {
-            deck.visual.setInteractive({ useHandCursor: true });
-            deck.visual.on('pointerdown', () => this.scene.onDeckClick(deck));
+    handleDeckClick(deckType) {
+        if (!this.scene.isPlayerTurn) return;
+
+        if (deckType === 'assist' && this.scene.hasDrawnAssist) {
+            this.scene.uiManager.showMessage('Already drawn an assist card');
+            return;
+        }
+
+        if (deckType === 'number') {
+            if (this.scene.hasDrawnNumber) {
+                this.scene.uiManager.showMessage('Already drawn a number card');
+                return;
+            }
+            if (!this.scene.hasDrawnAssist) {
+                this.scene.uiManager.showMessage('Must draw assist card first');
+                return;
+            }
+        }
+
+        this.scene.socketManager.drawCard(deckType);
+    }
+
+    addCardToHand(card) {
+        this.playerHand.push(card);
+        this.updateHandDisplay();
+    }
+
+    updateHandDisplay() {
+        // Clear existing hand display
+        this.playerHand.forEach(card => card.sprite?.destroy());
+
+        // Display new hand
+        const cardWidth = 80;
+        const padding = 10;
+        const startX = (this.scene.game.config.width - (this.playerHand.length * (cardWidth + padding))) / 2;
+        const y = this.scene.game.config.height - 100;
+
+        this.playerHand.forEach((card, index) => {
+            const x = startX + index * (cardWidth + padding) + cardWidth / 2;
+            const sprite = this.createCardSprite(x, y, card);
+            card.sprite = sprite;
         });
     }
 
-    updateDeckInteractions() {
-        if (!this.scene.decks) return;
-
-        Object.entries(this.scene.decks).forEach(([type, deck]) => {
-            const canInteract = this.scene.isPlayerTurn && this.scene.currentPhase === 'draw';
-            deck.setInteractive(canInteract);
-            deck.visual.setTint(canInteract ? 0xffffff : 0x666666);
+    createCardSprite(x, y, card) {
+        const sprite = this.scene.add.container(x, y);
+        
+        // Use card back image based on card type
+        const bgTexture = card.type === 'assist' ? 'assist-card-back' : 'number-card-back';
+        const bg = this.scene.add.image(0, 0, bgTexture);
+        bg.setScale(0.5);
+        
+        // Add card value text overlay
+        const text = this.scene.add.text(0, 0, card.value.toString(), {
+            fontSize: '32px',
+            fill: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 4
         });
+        text.setOrigin(0.5);
+
+        sprite.add([bg, text]);
+        sprite.setSize(80, 120);
+        sprite.setInteractive();
+        sprite.on('pointerdown', () => this.scene.onCardSelect(card));
+
+        return sprite;
+    }
+
+    getCupColor(colorName) {
+        const colors = {
+            'white': 0xffffff,
+            'brown': 0x8b4513,
+            'green': 0x228b22,
+            'purple': 0x800080,
+            'red': 0xff0000
+        };
+        return colors[colorName] || colors.white;
+    }
+
+    getCardColor(colorName) {
+        const colors = {
+            'white': '#000000',
+            'brown': '#8b4513',
+            'green': '#228b22',
+            'purple': '#800080',
+            'red': '#ff0000'
+        };
+        return colors[colorName] || colors.white;
+    }
+
+    addNumberToTile(tile, number) {
+        const text = this.scene.add.text(tile.x, tile.y, number.toString(), {
+            fontSize: '48px',
+            fill: '#ffffff'
+        });
+        text.setOrigin(0.5);
+        tile.number = text;
+    }
+
+    highlightValidTiles(card) {
+        this.tiles.forEach(tile => {
+            const tileData = this.scene.gameState.tiles.tiles[tile.index];
+            if (!tileData.hasNumber && tileData.index !== 4) {
+                tile.setStrokeStyle(2, 0x00ff00);
+            }
+        });
+    }
+
+    clearHighlights() {
+        this.tiles.forEach(tile => {
+            tile.setStrokeStyle(2, 0x666666);
+        });
+    }
+
+    placeCardOnTile(tileIndex, card) {
+        const tile = this.tiles[tileIndex];
+        if (tile && !tile.number) {
+            this.addNumberToTile(tile, card.value);
+        }
+    }
+
+    updateBoard() {
+        const tilesData = this.scene.gameState.tiles.tiles;
+        tilesData.forEach((tileData, index) => {
+            const tile = this.tiles[index];
+            if (tile) {
+                if (tileData.hasNumber && !tile.number) {
+                    this.addNumberToTile(tile, tileData.number);
+                }
+            }
+        });
+    }
+
+    updateInteractions() {
+        const isPlayerTurn = this.scene.isPlayerTurn;
+        
+        // Update deck interactivity
+        Object.values(this.decks).forEach(deck => {
+            if (deck) {
+                deck.setAlpha(isPlayerTurn ? 1 : 0.5);
+                deck.input.enabled = isPlayerTurn;
+            }
+        });
+
+        // Update tile interactivity
+        this.tiles.forEach(tile => {
+            tile.input.enabled = isPlayerTurn;
+            tile.setAlpha(isPlayerTurn ? 1 : 0.7);
+        });
+
+        // Clear any existing highlights
+        this.clearHighlights();
     }
 
     enableInteractions() {
-        if (this.scene.decks) {
-            this.updateDeckInteractions();
-        }
+        Object.values(this.decks).forEach(deck => {
+            if (deck) deck.input.enabled = true;
+        });
+        this.tiles.forEach(tile => tile.input.enabled = true);
     }
 
     disableInteractions() {
-        if (this.scene.hand?.cards) {
-            this.scene.hand.cards.forEach(card => {
-                if (card.frontSprite) card.frontSprite.disableInteractive();
-                if (card.backSprite) card.backSprite.disableInteractive();
-            });
-        }
-
-        if (this.scene.decks) {
-            Object.values(this.scene.decks).forEach(deck => {
-                deck.visual?.removeInteractive();
-            });
-        }
-
-        if (this.scene.tiles) {
-            this.scene.tiles.forEach(tile => {
-                tile.sprite?.removeInteractive();
-            });
-        }
+        Object.values(this.decks).forEach(deck => {
+            if (deck) deck.input.enabled = false;
+        });
+        this.tiles.forEach(tile => tile.input.enabled = false);
     }
 } 

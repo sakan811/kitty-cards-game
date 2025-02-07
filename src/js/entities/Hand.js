@@ -1,21 +1,24 @@
 import { HAND_CONFIG, CARD_DIMENSIONS } from '../config/constants.js';
 import { Card } from './Card.js';
 
-export class Hand {
+export class Hand extends Phaser.GameObjects.Container {
     constructor(scene, x, y, width) {
-        this.scene = scene;
-        this.x = x;
-        this.y = y;
+        super(scene, x, y);
+        scene.add.existing(this);
+        
         this.width = width;
         this.cards = [];
+        this.isAnimating = false;
+        
         this.createVisual();
+        this.setupDropZone();
     }
 
     createVisual() {
         // Create hand area
         this.area = this.scene.add.rectangle(
-            this.x + this.width/2,
-            this.y + HAND_CONFIG.height/2,
+            this.width/2,
+            HAND_CONFIG.height/2,
             this.width,
             HAND_CONFIG.height,
             0xf0f0f0
@@ -25,17 +28,54 @@ export class Hand {
 
         // Add label
         this.label = this.scene.add.text(
-            this.x + this.width/2,
-            this.y - 10,
+            this.width/2,
+            -10,
             'Your Hand',
             {
                 fontSize: '20px',
-                color: '#000000'
+                color: '#000000',
+                fontFamily: 'Arial'
             }
         ).setOrigin(0.5);
+
+        this.add([this.area, this.label]);
     }
 
-    addCard(card) {
+    setupDropZone() {
+        this.dropZone = this.scene.add.zone(
+            this.width/2,
+            HAND_CONFIG.height/2,
+            this.width,
+            HAND_CONFIG.height
+        ).setRectangleDropZone(this.width, HAND_CONFIG.height);
+
+        // Visual feedback for drop zone
+        const graphics = this.scene.add.graphics();
+        graphics.lineStyle(2, 0x00ff00);
+        graphics.strokeRect(
+            this.dropZone.x - this.dropZone.input.hitArea.width/2,
+            this.dropZone.y - this.dropZone.input.hitArea.height/2,
+            this.dropZone.input.hitArea.width,
+            this.dropZone.input.hitArea.height
+        );
+        graphics.setAlpha(0);  // Hide by default
+        
+        this.dropZone.on('pointerover', () => graphics.setAlpha(0.3));
+        this.dropZone.on('pointerout', () => graphics.setAlpha(0));
+        
+        this.add(graphics);
+    }
+
+    async addCard(card) {
+        console.log('Adding card to hand:', card);
+        
+        if (this.cards.length >= HAND_CONFIG.maxCards) {
+            console.warn('Hand is full, cannot add more cards');
+            this.showFullHandWarning();
+            card.destroy();
+            return;
+        }
+
         // Check for duplicates
         const isDuplicate = this.cards.some(existingCard => 
             existingCard.type === card.type && 
@@ -43,46 +83,123 @@ export class Hand {
         );
 
         if (!isDuplicate) {
-            const position = this.getCardPosition(this.cards.length);
-            card.moveTo(position.x, position.y);
+            // Add card to our array first
             this.cards.push(card);
-            this.updateCardDepths();
+            
+            // Make sure card is in the right container
+            if (card.parentContainer !== this) {
+                this.add(card);
+            }
+            
+            const pos = this.getCardPosition(this.cards.length - 1);
+            console.log('Card position in hand:', pos);
+            
+            try {
+                // Animate card entry
+                await this.animateCardEntry(card, pos.x, pos.y);
+                console.log('Card entry animation complete');
+                
+                // Flip the card
+                await card.flip();
+                console.log('Card flip complete');
+                
+                // Rearrange all cards
+                await this.rearrangeCards(true);
+                console.log('Cards rearranged');
+                
+                // Update depths after all animations
+                this.updateCardDepths();
+            } catch (error) {
+                console.error('Error during card animations:', error);
+                // If any animation fails, make sure card is still visible and in position
+                card.setPosition(pos.x, pos.y);
+                card.setVisible(true);
+            }
         } else {
+            console.log('Duplicate card found, destroying');
             card.destroy();
         }
     }
 
+    async animateCardEntry(card, targetX, targetY) {
+        // Start from above the hand
+        card.setPosition(targetX, targetY - 200);
+        
+        // Add bounce effect
+        return new Promise(resolve => {
+            this.scene.tweens.add({
+                targets: card,
+                y: targetY,
+                duration: 500,
+                ease: 'Bounce.easeOut',
+                onComplete: resolve
+            });
+        });
+    }
+
     getCardPosition(index) {
-        const totalSpacing = this.width - (HAND_CONFIG.maxCards * CARD_DIMENSIONS.width);
-        const spacingBetween = totalSpacing / (HAND_CONFIG.maxCards - 1);
+        const totalCards = this.cards.length;
+        const maxSpacing = (this.width - CARD_DIMENSIONS.width) / (HAND_CONFIG.maxCards - 1);
+        const spacing = Math.min(maxSpacing, CARD_DIMENSIONS.width * 1.1);
+        
+        // Calculate total width of cards with spacing
+        const totalWidth = (totalCards - 1) * spacing + CARD_DIMENSIONS.width;
+        const startX = (this.width - totalWidth) / 2;
+        
         return {
-            x: this.x + (CARD_DIMENSIONS.width / 2) + (index * (CARD_DIMENSIONS.width + spacingBetween)),
-            y: this.y + (HAND_CONFIG.height / 2)
+            x: startX + (index * spacing) + (CARD_DIMENSIONS.width / 2),
+            y: HAND_CONFIG.height / 2
         };
     }
 
-    removeCard(card) {
+    async removeCard(card) {
         const index = this.cards.indexOf(card);
         if (index > -1) {
+            // Animate card removal
+            await this.animateCardRemoval(card);
             this.cards.splice(index, 1);
-            this.rearrangeCards();
+            await this.rearrangeCards(true);
         }
     }
 
-    rearrangeCards() {
-        this.cards.forEach((card, index) => {
-            const position = this.getCardPosition(index);
-            card.moveTo(position.x, position.y);
+    async animateCardRemoval(card) {
+        return new Promise(resolve => {
+            this.scene.tweens.add({
+                targets: card,
+                y: '-=200',
+                alpha: 0,
+                duration: 300,
+                ease: 'Power2',
+                onComplete: () => {
+                    card.destroy();
+                    resolve();
+                }
+            });
         });
+    }
+
+    async rearrangeCards(animate = false) {
+        if (this.isAnimating) return;
+        this.isAnimating = true;
+
+        const promises = this.cards.map((card, index) => {
+            const pos = this.getCardPosition(index);
+            if (animate) {
+                return card.moveTo(pos.x, pos.y);
+            } else {
+                card.setPosition(pos.x, pos.y);
+                return Promise.resolve();
+            }
+        });
+
+        await Promise.all(promises);
+        this.isAnimating = false;
         this.updateCardDepths();
     }
 
     updateCardDepths() {
         this.cards.forEach((card, index) => {
-            const baseDepth = (index + 1) * 10;
-            if (card.sprite) card.sprite.setDepth(baseDepth);
-            if (card.frontSprite) card.frontSprite.setDepth(baseDepth);
-            if (card.text) card.text.setDepth(baseDepth + 1);
+            card.setDepth(index + 10);  // Base depth of 10 for cards
         });
     }
 
@@ -95,11 +212,21 @@ export class Hand {
                 fontSize: '24px',
                 color: '#ff0000',
                 backgroundColor: '#ffffff',
-                padding: { x: 10, y: 5 }
+                padding: { x: 10, y: 5 },
+                fontFamily: 'Arial'
             }
-        ).setOrigin(0.5);
+        ).setOrigin(0.5)
+         .setDepth(1000);  // Ensure it's above other elements
 
-        this.scene.time.delayedCall(1000, () => warningText.destroy());
+        // Add warning animation
+        this.scene.tweens.add({
+            targets: warningText,
+            y: '-=50',
+            alpha: 0,
+            duration: 1000,
+            ease: 'Power2',
+            onComplete: () => warningText.destroy()
+        });
     }
 
     getNextCardPosition() {
@@ -108,13 +235,10 @@ export class Hand {
 
     destroy() {
         this.cards.forEach(card => card.destroy());
-        if (this.area?.active) this.area.destroy();
-        if (this.label?.active) this.label.destroy();
+        super.destroy();
     }
 
     render(cards) {
-        console.log('Rendering hand with cards:', cards);
-        
         // Clear existing cards
         this.cards.forEach(card => card.destroy());
         this.cards = [];

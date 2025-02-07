@@ -6,7 +6,6 @@ export class LobbyUI {
         this.waitingContainer.setVisible(false);
         this.statusText = null;
         this.readyButton = null;
-        this.roomInput = null;
     }
 
     createMainMenu() {
@@ -15,91 +14,25 @@ export class LobbyUI {
         this.mainContainer.add(bg);
 
         // Title
-        const title = this.scene.add.text(400, 100, 'Kitty Cards Game Lobby', {
+        const title = this.scene.add.text(400, 100, 'Kitty Cards Game', {
             fontSize: '32px',
             color: '#000',
             fontStyle: 'bold'
         }).setOrigin(0.5);
         this.mainContainer.add(title);
 
-        this._createCreateRoomButton();
-        this._createJoinRoomSection();
+        // Create play button
+        const playButton = this.scene.add.sprite(400, 250, 'play_button');
+        playButton.setScale(0.8);
+        playButton.setInteractive({ useHandCursor: true });
+
+        playButton.on('pointerdown', () => this.scene.handleCreateRoom());
+        playButton.on('pointerover', () => playButton.setAlpha(0.8));
+        playButton.on('pointerout', () => playButton.setAlpha(1));
+
+        this.mainContainer.add(playButton);
 
         return this.mainContainer;
-    }
-
-    _createCreateRoomButton() {
-        const createButton = this.scene.add.rectangle(400, 250, 200, 50, 0x4CAF50);
-        const createText = this.scene.add.text(400, 250, 'Create Room', {
-            fontSize: '24px',
-            color: '#fff'
-        }).setOrigin(0.5);
-
-        createButton.setInteractive({ useHandCursor: true });
-        createText.setInteractive({ useHandCursor: true });
-
-        [createButton, createText].forEach(element => {
-            element.on('pointerdown', () => this.scene.handleCreateRoom());
-            element.on('pointerover', () => createButton.setAlpha(0.8));
-            element.on('pointerout', () => createButton.setAlpha(1));
-        });
-
-        this.mainContainer.add([createButton, createText]);
-    }
-
-    _createJoinRoomSection() {
-        const joinTitle = this.scene.add.text(400, 350, 'Join Room', {
-            fontSize: '24px',
-            color: '#000'
-        }).setOrigin(0.5);
-        this.mainContainer.add(joinTitle);
-
-        // Create input element
-        const inputElement = document.createElement('input');
-        inputElement.type = 'text';
-        inputElement.placeholder = 'Enter Room Code';
-        inputElement.style.width = '200px';
-        inputElement.style.height = '30px';
-        inputElement.style.textAlign = 'center';
-        inputElement.style.fontSize = '18px';
-
-        this.roomInput = this.scene.add.dom(400, 400, inputElement);
-        this.mainContainer.add(this.roomInput);
-
-        // Join button
-        const joinButton = this.scene.add.rectangle(400, 450, 200, 50, 0x2196F3);
-        const joinText = this.scene.add.text(400, 450, 'Join Room', {
-            fontSize: '24px',
-            color: '#fff'
-        }).setOrigin(0.5);
-
-        [joinButton, joinText].forEach(element => {
-            element.setInteractive({ useHandCursor: true });
-            element.on('pointerdown', () => {
-                const roomId = this.roomInput.node.value.trim();
-                if (roomId) {
-                    this.scene.handleJoinRoom(roomId);
-                } else {
-                    this.scene.showError('Please enter a room code');
-                }
-            });
-            element.on('pointerover', () => joinButton.setAlpha(0.8));
-            element.on('pointerout', () => joinButton.setAlpha(1));
-        });
-
-        this.mainContainer.add([joinButton, joinText]);
-
-        // Add Enter key handler
-        inputElement.addEventListener('keyup', (event) => {
-            if (event.key === 'Enter') {
-                const roomId = this.roomInput.node.value.trim();
-                if (roomId) {
-                    this.scene.handleJoinRoom(roomId);
-                } else {
-                    this.scene.showError('Please enter a room code');
-                }
-            }
-        });
     }
 
     showWaitingRoom(roomId, players, playerId) {
