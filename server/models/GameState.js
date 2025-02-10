@@ -1,6 +1,3 @@
-import { TURN_STATES } from '../config/constants.js';
-import { generateNumberDeck, generateAssistDeck, generateTileLayout } from '../services/deckService.js';
-
 export class GameState {
     constructor() {
         this.players = new Map();
@@ -21,9 +18,11 @@ export class GameState {
     }
 
     initializeTiles() {
+        const cupColors = ['brown', 'green', 'purple', 'red'];
+        const positions = [0, 1, 2, 3, 5, 6, 7, 8]; // Index 4 is middle tile
         const tiles = Array(9).fill(null).map((_, index) => ({
             index,
-            cupColor: 'white', // Default color
+            cupColor: 'white',
             hasNumber: false,
             number: null
         }));
@@ -31,15 +30,20 @@ export class GameState {
         // Remove middle tile (index 4)
         tiles[4] = { index: 4, cupColor: null, hasNumber: false, number: null };
 
-        // Randomly assign 4 colored cups
-        const colors = ['brown', 'green', 'purple', 'red'];
-        const availableIndices = [0, 1, 2, 3, 5, 6, 7, 8];
-        
-        for (let i = 0; i < 4; i++) {
-            const randomIndex = Math.floor(Math.random() * availableIndices.length);
-            const tileIndex = availableIndices.splice(randomIndex, 1)[0];
-            tiles[tileIndex].cupColor = colors[i];
+        // Shuffle positions for colored cups
+        for (let i = positions.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [positions[i], positions[j]] = [positions[j], positions[i]];
         }
+
+        // Shuffle colors and allow duplicates by doubling the array
+        const shuffledColors = [...cupColors, ...cupColors].sort(() => Math.random() - 0.5);
+        const selectedColors = shuffledColors.slice(0, 4);
+
+        // Assign colors to random positions
+        positions.slice(0, 4).forEach((pos, idx) => {
+            tiles[pos].cupColor = selectedColors[idx];
+        });
 
         return { tiles };
     }

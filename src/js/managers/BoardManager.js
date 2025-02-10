@@ -16,10 +16,17 @@ export class BoardManager {
     }
 
     createGameBoard() {
+        // Validate game state
+        if (!this.scene.gameState?.tiles?.tiles) {
+            console.error('Invalid game state for board creation');
+            return false;
+        }
+
         // Create the 3x3 board layout
         this.createTiles();
         // Create decks in the middle tile
         this.createDecks();
+        return true;
     }
 
     createTiles() {
@@ -30,12 +37,8 @@ export class BoardManager {
         const startX = (this.scene.game.config.width - boardWidth) / 2;
         const startY = (this.scene.game.config.height - boardHeight) / 2;
 
-        // Get available cup colors
-        const cupColors = ['brown', 'green', 'purple', 'red', 'white'];
-        
-        // Randomly select 4 positions (excluding middle) for colored cups
-        const positions = [0, 1, 2, 3, 5, 6, 7, 8];
-        const coloredPositions = positions.sort(() => Math.random() - 0.5).slice(0, 4);
+        // Get tiles data from game state
+        const tilesData = this.scene.gameState.tiles.tiles;
         
         // Create visual tiles
         for (let i = 0; i < 9; i++) {
@@ -44,26 +47,7 @@ export class BoardManager {
             const x = startX + col * (tileSize + padding) + tileSize / 2;
             const y = startY + row * (tileSize + padding) + tileSize / 2;
 
-            // Skip middle tile (index 4)
-            if (i === 4) {
-                const tile = this.createTile(x, y, tileSize, { index: i });
-                this.tiles[i] = tile;
-                continue;
-            }
-
-            // Determine cup color
-            let cupColor = 'white';
-            if (coloredPositions.includes(i)) {
-                const randomIndex = Math.floor(Math.random() * cupColors.length);
-                cupColor = cupColors.splice(randomIndex, 1)[0];
-            }
-
-            const tileData = {
-                index: i,
-                cupColor: cupColor,
-                hasNumber: false
-            };
-            
+            const tileData = tilesData[i];
             const tile = this.createTile(x, y, tileSize, tileData);
             this.tiles[i] = tile;
         }
@@ -77,21 +61,22 @@ export class BoardManager {
         tile.index = tileData.index;
 
         // Create cup sprite if not middle tile
-        if (tileData.index !== 4) {
+        if (tileData.index !== 4 && tileData.cupColor) {
             const cupKey = `cup-${tileData.cupColor}`;
             const cup = this.scene.add.image(x, y, cupKey);
             cup.setScale(0.8);
             tile.cup = cup;
+            tile.cupColor = tileData.cupColor;
         }
 
         // Add number if exists
-        if (tileData.hasNumber) {
+        if (tileData.hasNumber && tileData.number !== null) {
             this.addNumberToTile(tile, tileData.number);
         }
 
         // Add click handler
         tile.on('pointerdown', () => {
-            this.scene.onTileClick(tileData, tileData.index);
+            this.scene.onTileClick(tile, tileData.index);
         });
 
         return tile;
@@ -289,9 +274,42 @@ export class BoardManager {
     }
 
     disableInteractions() {
-        Object.values(this.decks).forEach(deck => {
-            if (deck) deck.input.enabled = false;
+        this.tiles.forEach(tile => {
+            tile.disableInteractive();
         });
-        this.tiles.forEach(tile => tile.input.enabled = false);
+        Object.values(this.decks).forEach(deck => {
+            if (deck) deck.disableInteractive();
+        });
+    }
+
+    cleanup() {
+        // Destroy all tiles and their associated elements
+        this.tiles.forEach(tile => {
+            if (tile.cup) {
+                tile.cup.destroy();
+            }
+            if (tile.number) {
+                tile.number.destroy();
+            }
+            tile.destroy();
+        });
+        this.tiles = [];
+
+        // Destroy decks
+        Object.values(this.decks).forEach(deck => {
+            if (deck) deck.destroy();
+        });
+        this.decks = {
+            assist: null,
+            number: null
+        };
+
+        // Destroy hand cards
+        this.playerHand.forEach(card => {
+            if (card.sprite) {
+                card.sprite.destroy();
+            }
+        });
+        this.playerHand = [];
     }
 } 

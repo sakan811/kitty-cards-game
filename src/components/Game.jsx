@@ -2,13 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import socketService from '../js/services/SocketService';
 import { useGame } from '../context/GameContext';
-import '../js/lib/phaser.js';  // Import Phaser first
+import GameScene from '../js/scenes/GameScene';
+import Phaser from '../js/lib/phaser.js';
 
 const Game = () => {
   const gameContainerRef = useRef(null);
   const gameInstanceRef = useRef(null);
   const navigate = useNavigate();
-  const { gameState, setGameState } = useGame();
+  const { gameState } = useGame();
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -26,7 +27,6 @@ const Game = () => {
     const initGame = async () => {
       try {
         setIsLoading(true);
-        const { default: gameConfig } = await import('../js/game');
         
         // Create new game instance
         if (gameInstanceRef.current) {
@@ -35,24 +35,71 @@ const Game = () => {
           gameInstanceRef.current = null;
         }
 
-        // Import and configure game
-        const { Game: PhaserGame } = await import('phaser');
-        gameInstanceRef.current = new PhaserGame({
-          ...gameConfig,
+        // Configure game
+        const config = {
+          type: Phaser.AUTO,
+          width: 900,
+          height: 1600,
+          backgroundColor: '#2d2d2d',
           parent: 'game',
-          scene: gameConfig.scene.map(Scene => new Scene()),
-          callbacks: {
-            postBoot: (game) => {
-              // Start main scene with game state
-              game.scene.start('MainScene', {
-                socket,
-                roomCode: gameState.roomCode,
-                players: gameState.players,
-                currentTurn: gameState.currentTurn
-              });
-              setIsLoading(false);
+          scene: GameScene,
+          scale: {
+            mode: Phaser.Scale.FIT,
+            autoCenter: Phaser.Scale.CENTER_BOTH,
+            width: 900,
+            height: 1600,
+            min: {
+              width: 375,
+              height: 667
+            },
+            max: {
+              width: 1024,
+              height: 1366
             }
+          },
+          dom: {
+            createContainer: true
+          },
+          input: {
+            disableContextMenu: false
           }
+        };
+
+        // Create game instance
+        const game = new Phaser.Game(config);
+        gameInstanceRef.current = game;
+
+        // Wait for the game to be ready
+        game.events.once('ready', () => {
+          // Validate game state before starting scene
+          if (!gameState.roomCode || !gameState.players) {
+            console.error('Invalid game state:', gameState);
+            setError('Invalid game state. Returning to lobby...');
+            setTimeout(() => navigate('/lobby'), 2000);
+            return;
+          }
+
+          // Start GameScene with initial data
+          const sceneData = {
+            socket,
+            roomCode: gameState.roomCode,
+            players: gameState.players,
+            currentTurn: gameState.currentPlayer,
+            playerId: socket.id,
+            gameState: {
+              currentPlayer: gameState.currentPlayer,
+              players: gameState.players,
+              tiles: gameState.tiles || [],
+              decks: {
+                assist: gameState.assistDeck || [],
+                number: gameState.numberDeck || []
+              }
+            }
+          };
+          
+          console.log('Starting GameScene with data:', sceneData);
+          game.scene.start('GameScene', sceneData);
+          setIsLoading(false);
         });
 
       } catch (error) {
@@ -75,7 +122,7 @@ const Game = () => {
       setTimeout(() => navigate('/lobby'), 2000);
     });
 
-    // Clean up on unmount
+    // Clean up
     return () => {
       if (gameInstanceRef.current) {
         console.log('Cleaning up game instance');
@@ -89,7 +136,7 @@ const Game = () => {
       socket.off('disconnect');
       socket.off('gameError');
     };
-  }, [navigate, gameState, setGameState]);
+  }, [gameState.roomCode]); // Only reinitialize if room code changes
 
   return (
     <div className="game-container relative min-h-screen bg-gray-900">
@@ -106,6 +153,6 @@ const Game = () => {
       <div id="game" ref={gameContainerRef} className="game-canvas" />
     </div>
   );
-};
+}
 
 export default Game; 

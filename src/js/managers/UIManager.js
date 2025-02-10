@@ -61,7 +61,8 @@ export class UIManager {
             backgroundColor: '#4a5568',
             padding: { x: 20, y: 10 },
             fixedWidth: 150,
-            align: 'center'
+            align: 'center',
+            color: '#ffffff'
         };
 
         // Create end turn button
@@ -72,7 +73,17 @@ export class UIManager {
             buttonStyle
         )
         .setInteractive({ useHandCursor: true })
-        .on('pointerdown', () => this.scene.onEndTurnClick())
+        .on('pointerover', function() {
+            this.setStyle({ color: '#00ff00' });
+        })
+        .on('pointerout', function() {
+            this.setStyle({ color: '#ffffff' });
+        })
+        .on('pointerdown', () => {
+            if (this.scene.turnManager) {
+                this.scene.turnManager.onEndTurnClick();
+            }
+        })
         .setOrigin(1, 0.5);
 
         // Create exit button
@@ -83,8 +94,21 @@ export class UIManager {
             buttonStyle
         )
         .setInteractive({ useHandCursor: true })
-        .on('pointerdown', () => this.scene.onExitClick())
+        .on('pointerover', function() {
+            this.setStyle({ color: '#ff0000' });
+        })
+        .on('pointerout', function() {
+            this.setStyle({ color: '#ffffff' });
+        })
+        .on('pointerdown', () => {
+            if (this.scene.turnManager) {
+                this.scene.turnManager.onExitClick();
+            }
+        })
         .setOrigin(0, 0.5);
+
+        // Initially disable buttons until game state is ready
+        this.disableButtons();
     }
 
     createMessageArea() {
@@ -228,6 +252,34 @@ export class UIManager {
                 element.setAlpha(0.5);
             }
         });
+    }
+
+    cleanup() {
+        // Clear any pending timeouts
+        if (this.messageTimeout) {
+            clearTimeout(this.messageTimeout);
+            this.messageTimeout = null;
+        }
+
+        // Destroy all UI elements
+        Object.values(this.uiElements).forEach(element => {
+            if (element) {
+                if (element.input) {
+                    element.removeInteractive();
+                }
+                element.destroy();
+            }
+        });
+
+        // Reset UI elements object
+        this.uiElements = {
+            turnIndicator: null,
+            phaseIndicator: null,
+            messageText: null,
+            endTurnButton: null,
+            exitButton: null,
+            scoreText: null
+        };
     }
 
     updateUI() {
