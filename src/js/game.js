@@ -1,7 +1,6 @@
 import Phaser from './lib/phaser.js';
-import { MainScene } from './scenes/MainScene.js';
+import GameScene from './scenes/GameScene.js';
 import { LobbyScene } from './scenes/LobbyScene.js';
-import { PreloadScene } from './scenes/PreloadScene.js';
 
 const config = {
     type: Phaser.AUTO,
@@ -9,7 +8,7 @@ const config = {
     height: 600,
     backgroundColor: '#2d2d2d',
     parent: 'game',
-    scene: [PreloadScene, LobbyScene, MainScene],
+    scene: [LobbyScene, GameScene],
     scale: {
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -23,16 +22,6 @@ const config = {
             width: 1024,
             height: 1366
         }
-    },
-    physics: {
-        default: 'arcade',
-        arcade: {
-            debug: false
-        }
-    },
-    audio: {
-        disableWebAudio: false,
-        noAudio: false
     },
     dom: {
         createContainer: true

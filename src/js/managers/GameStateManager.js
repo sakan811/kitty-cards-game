@@ -14,85 +14,69 @@ export class GameStateManager {
     }
 
     initializeGameState(data) {
-        this.socket = data.socket;
-        this.roomId = data.roomId;
-        this.playerId = data.playerId;
-        
-        if (this.roomId) {
-            socketService.setRoom(this.roomId);
-        }
-        
-        if (data.players && Array.isArray(data.players)) {
-            const otherPlayer = data.players.find(p => p && p.id && p.id !== this.playerId);
-            this.opponentId = otherPlayer?.id || null;
+        if (!data?.socket || !data?.roomCode || !data?.players || !data?.gameState) {
+            console.error('Missing required game data:', data);
+            return false;
         }
 
-        // Create default game state if none provided
-        if (!data.gameState) {
-            data.gameState = {
-                currentPlayer: this.playerId,
-                turnState: 'assist_phase',
-                players: {
-                    [this.playerId]: {
-                        hasDrawnAssist: false,
-                        hasDrawnNumber: false,
-                        score: 0
-                    }
-                },
-                tiles: {
-                    tiles: Array(9).fill(null).map(() => ({
-                        card: null,
-                        number: null,
-                        isHighlighted: false
-                    }))
-                }
-            };
-            if (this.opponentId) {
-                data.gameState.players[this.opponentId] = {
-                    hasDrawnAssist: false,
-                    hasDrawnNumber: false,
-                    score: 0
-                };
-            }
+        this.socket = data.socket;
+        this.roomId = data.roomCode;
+        this.playerId = this.socket.id;
+        
+        // Set opponent ID
+        if (data.players && Array.isArray(data.players)) {
+            this.opponentId = data.players.find(p => p !== this.playerId);
         }
 
         console.log('Initializing game state:', data.gameState);
         this.gameState = data.gameState;
-        this.isPlayerTurn = this.gameState.currentPlayer === this.playerId;
-        this.currentPhase = this.gameState.turnState || 'assist_phase';
         
+        // Set turn state
+        this.isPlayerTurn = this.gameState.currentPlayer === this.playerId;
+        this.currentPhase = this.gameState.turnState;
+        
+        // Set player state
         if (this.gameState.players && this.playerId) {
-            const playerState = this.gameState.players[this.playerId] || {};
-            this.hasDrawnAssist = playerState.hasDrawnAssist || false;
-            this.hasDrawnNumber = playerState.hasDrawnNumber || false;
+            const playerState = this.gameState.players[this.playerId];
+            if (playerState) {
+                this.hasDrawnAssist = playerState.hasDrawnAssist;
+                this.hasDrawnNumber = playerState.hasDrawnNumber;
+            }
         }
+
         return true;
     }
 
     updateGameState(newState) {
-        this.gameState = newState;
-        this.updateTurnState();
-    }
-
-    updateTurnState() {
-        const prevTurn = this.isPlayerTurn;
-        const prevPhase = this.currentPhase;
-
-        this.isPlayerTurn = this.gameState.currentPlayer === this.playerId;
-        this.currentPhase = this.gameState.turnState || this.currentPhase;
+        if (!newState) return false;
         
-        return {
-            isPlayerTurn: this.isPlayerTurn,
-            currentPhase: this.currentPhase,
-            changed: prevTurn !== this.isPlayerTurn || prevPhase !== this.currentPhase
-        };
+        this.gameState = newState;
+        
+        // Update turn state
+        this.isPlayerTurn = newState.currentPlayer === this.playerId;
+        this.currentPhase = newState.turnState;
+        
+        // Update player state
+        if (newState.players && this.playerId) {
+            const playerState = newState.players[this.playerId];
+            if (playerState) {
+                this.hasDrawnAssist = playerState.hasDrawnAssist;
+                this.hasDrawnNumber = playerState.hasDrawnNumber;
+            }
+        }
+
+        return true;
     }
 
     validateGameState() {
-        return !!this.gameState;
+        return this.gameState && 
+               this.gameState.tiles && 
+               Array.isArray(this.gameState.tiles.tiles) &&
+               this.gameState.tiles.tiles.length === 9;
     }
 
     determineWinner(scores) {
+        if (!scores) return null;
         const entries = Object.entries(scores);
         if (entries.length !== 2) return null;
         return entries[0][1] > entries[1][1] ? entries[0][0] : entries[1][0];

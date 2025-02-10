@@ -176,9 +176,19 @@ export class LobbyScene extends Phaser.Scene {
         }
 
         if (this.currentRoomId === roomId) {
-            this.scene.start('MainScene', { 
+            // Remove any existing DOM elements before transitioning
+            const existingInput = document.querySelector('input');
+            if (existingInput) existingInput.remove();
+            const existingButtons = document.querySelectorAll('button');
+            existingButtons.forEach(button => button.remove());
+
+            // Show transition message
+            this.showMessage('Starting game...');
+
+            // Start GameScene with all necessary data
+            this.scene.start('GameScene', { 
                 socket: socketService.getSocket(),
-                roomId: this.currentRoomId,
+                roomCode: this.currentRoomId, // Match GameScene's expected property
                 playerId: this.playerId,
                 players: this.players,
                 gameState,

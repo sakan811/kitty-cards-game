@@ -16,6 +16,7 @@ export const gameConfig = {
         }
     },
     input: {
-        touch: true
+        touch: true,
+        disableContextMenu: false
     }
 }; 
