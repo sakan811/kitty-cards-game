@@ -42,7 +42,7 @@ const Game = () => {
           height: 1600,
           backgroundColor: '#2d2d2d',
           parent: 'game',
-          scene: GameScene,
+          scene: [], // Remove scene from config, we'll add it manually
           scale: {
             mode: Phaser.Scale.FIT,
             autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -98,7 +98,24 @@ const Game = () => {
           };
           
           console.log('Starting GameScene with data:', sceneData);
-          game.scene.start('GameScene', sceneData);
+          
+          // Add and start scene
+          if (!game.scene.getScene('GameScene')) {
+            game.scene.add('GameScene', GameScene, true, sceneData);
+          } else {
+            game.scene.start('GameScene', sceneData);
+          }
+          
+          // Set up error handling
+          const gameScene = game.scene.getScene('GameScene');
+          if (gameScene) {
+            gameScene.events.on('gameError', (errorMsg) => {
+              console.error('Game scene error:', errorMsg);
+              setError(errorMsg + ' Returning to lobby...');
+              setTimeout(() => navigate('/lobby'), 2000);
+            });
+          }
+          
           setIsLoading(false);
         });
 
