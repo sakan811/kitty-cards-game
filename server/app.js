@@ -4,8 +4,23 @@ import { dirname, join } from 'path';
 import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import { SERVER_CONFIG, RATE_LIMIT_CONFIG } from './config/gameConfig.js';
-import { setupSocketHandlers } from './handlers/socketHandlers.js';
+
+// Server configuration
+const SERVER_CONFIG = {
+    port: process.env.PORT || 3000,
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"],
+        credentials: true
+    }
+};
+
+// Rate limiting configuration
+const RATE_LIMIT_CONFIG = {
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per windowMs
+    message: 'Too many requests from this IP, please try again later.'
+};
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -31,27 +46,155 @@ if (process.env.NODE_ENV !== 'development') {
     app.use(limiter);
 }
 
-// Serve static files from 'src' directory
-app.use(express.static(join(__dirname, '..', 'src'), {
-    setHeaders: (res, path) => {
-        // Set proper MIME types for JavaScript modules
-        if (path.endsWith('.js')) {
-            res.setHeader('Content-Type', 'application/javascript');
-        }
-        // Enable CORS for development
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    }
-}));
+// Serve static files from 'dist' directory
+app.use(express.static(join(__dirname, '..', 'dist')));
 
-// Handle client-side routing for Phaser
+// Serve index.html for all routes to support client-side routing
 app.get('*', (req, res) => {
-    res.sendFile(join(__dirname, '..', 'src', 'index.html'));
+    res.sendFile(join(__dirname, '..', 'dist', 'index.html'));
 });
 
 // Setup Socket.IO handlers
-setupSocketHandlers(io);
+const setupSocketHandlers = (io) => {
+    // Store active rooms
+    const rooms = new Map();
+
+    io.on('connection', (socket) => {
+        console.log('New client connected:', socket.id);
+
+        socket.on('createRoom', () => {
+            const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+            const room = {
+                id: roomId,
+                hostId: socket.id,
+                players: [{ id: socket.id, ready: false }],
+                gameState: null
+            };
+            rooms.set(roomId, room);
+            socket.join(roomId);
+            socket.roomId = roomId;
+            console.log(`Room created: ${roomId} by player ${socket.id}`);
+            socket.emit('roomCreated', { roomId, playerId: socket.id });
+        });
+
+        socket.on('joinRoom', ({ roomId }) => {
+            console.log(`Join room attempt: ${roomId} by player ${socket.id}`);
+            const room = rooms.get(roomId);
+            if (!room) {
+                socket.emit('roomError', 'Room not found');
+                return;
+            }
+            if (room.players.length >= 2) {
+                socket.emit('roomError', 'Room is full');
+                return;
+            }
+            
+            room.players.push({ id: socket.id, ready: false });
+            socket.join(roomId);
+            socket.roomId = roomId;
+            console.log(`Player ${socket.id} joined room ${roomId}`);
+            
+            // Send room data to the joining player
+            socket.emit('joinedRoom', { 
+                roomId, 
+                playerId: socket.id,
+                room: {
+                    ...room,
+                    players: room.players
+                }
+            });
+
+            // Notify all players in the room
+            io.to(roomId).emit('playerJoined', { room });
+        });
+
+        socket.on('playerReady', ({ roomId, ready }) => {
+            console.log(`Player ${socket.id} ready state in room ${roomId}: ${ready}`);
+            const room = rooms.get(roomId);
+            if (!room) {
+                socket.emit('roomError', 'Room not found');
+                return;
+            }
+
+            const player = room.players.find(p => p.id === socket.id);
+            if (player) {
+                player.ready = ready;
+                io.to(roomId).emit('playerReady', { room });
+
+                // Check if all players are ready
+                const allReady = room.players.length === 2 && room.players.every(p => p.ready);
+                if (allReady) {
+                    // Initialize game state
+                    room.gameState = {
+                        currentPlayer: room.players[Math.floor(Math.random() * 2)].id,
+                        players: room.players,
+                        tiles: [],  // Initialize with game setup
+                        assistDeck: [],  // Initialize with game setup
+                        numberDeck: []   // Initialize with game setup
+                    };
+                    io.to(roomId).emit('gameStart', { 
+                        roomId,
+                        gameState: room.gameState
+                    });
+                }
+            }
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Client disconnected:', socket.id);
+            if (socket.roomId) {
+                const room = rooms.get(socket.roomId);
+                if (room) {
+                    room.players = room.players.filter(p => p.id !== socket.id);
+                    if (room.players.length === 0) {
+                        rooms.delete(socket.roomId);
+                    } else {
+                        io.to(socket.roomId).emit('playerLeft', { 
+                            playerId: socket.id,
+                            room: {
+                                ...room,
+                                players: room.players
+                            }
+                        });
+                    }
+                }
+            }
+        });
+
+        socket.on('leaveRoom', () => {
+            if (socket.roomId) {
+                const room = rooms.get(socket.roomId);
+                if (room) {
+                    room.players = room.players.filter(p => p.id !== socket.id);
+                    socket.leave(socket.roomId);
+                    if (room.players.length === 0) {
+                        rooms.delete(socket.roomId);
+                    } else {
+                        io.to(socket.roomId).emit('playerLeft', { 
+                            playerId: socket.id,
+                            room: {
+                                ...room,
+                                players: room.players
+                            }
+                        });
+                    }
+                }
+                socket.roomId = null;
+            }
+        });
+
+        socket.on('gameAction', ({ roomId, action }) => {
+            if (roomId) {
+                const room = rooms.get(roomId);
+                if (room && room.gameState) {
+                    // Update game state based on action
+                    room.gameState = { ...room.gameState, ...action };
+                    io.to(roomId).emit('gameUpdate', { gameState: room.gameState });
+                }
+            }
+        });
+    });
+};
 
 // Add middleware to track socket state
 io.use((socket, next) => {
@@ -63,6 +206,9 @@ io.use((socket, next) => {
     }
     next();
 });
+
+// Initialize socket handlers
+setupSocketHandlers(io);
 
 // Start server
 httpServer.listen(SERVER_CONFIG.port, () => {
