@@ -2,37 +2,37 @@
     "section1": {
         "files": [
             {
-                "url": "src/assets/images/cards/assist-card-back.jpg",
+                "url": "images/cards/assist-card-back.jpg",
                 "type": "image",
                 "key": "assist-card-back"
             },
             {
-                "url": "src/assets/images/cups/cup-brown.jpg",
+                "url": "images/cups/cup-brown.jpg",
                 "type": "image",
                 "key": "cup-brown"
             },
             {
-                "url": "src/assets/images/cups/cup-green.jpg",
+                "url": "images/cups/cup-green.jpg",
                 "type": "image",
                 "key": "cup-green"
             },
             {
-                "url": "src/assets/images/cups/cup-purple.jpg",
+                "url": "images/cups/cup-purple.jpg",
                 "type": "image",
                 "key": "cup-purple"
             },
             {
-                "url": "src/assets/images/cups/cup-red.jpg",
+                "url": "images/cups/cup-red.jpg",
                 "type": "image",
                 "key": "cup-red"
             },
             {
-                "url": "src/assets/images/cups/cup-white.jpg",
+                "url": "images/cups/cup-white.jpg",
                 "type": "image",
                 "key": "cup-white"
             },
             {
-                "url": "src/assets/images/cards/number-card-back.jpg",
+                "url": "images/cards/number-card-back.jpg",
                 "type": "image",
                 "key": "number-card-back"
             }
