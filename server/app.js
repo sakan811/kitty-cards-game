@@ -4,6 +4,7 @@ import { dirname, join } from 'path';
 import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import { GameState } from './models/GameState.js';
 
 // Server configuration
 const SERVER_CONFIG = {
@@ -48,6 +49,17 @@ if (process.env.NODE_ENV !== 'development') {
 
 // Serve static files from 'dist' directory
 app.use(express.static(join(__dirname, '..', 'dist')));
+
+// Serve game assets with proper MIME types
+app.use('/assets', express.static(join(__dirname, '..', 'src', 'assets'), {
+    setHeaders: (res, path) => {
+        if (path.endsWith('.jpg')) {
+            res.set('Content-Type', 'image/jpeg');
+        } else if (path.endsWith('.png')) {
+            res.set('Content-Type', 'image/png');
+        }
+    }
+}));
 
 // Serve index.html for all routes to support client-side routing
 app.get('*', (req, res) => {
@@ -125,12 +137,13 @@ const setupSocketHandlers = (io) => {
                 const allReady = room.players.length === 2 && room.players.every(p => p.ready);
                 if (allReady) {
                     // Initialize game state
+                    const gameState = new GameState();
                     room.gameState = {
                         currentPlayer: room.players[Math.floor(Math.random() * 2)].id,
                         players: room.players,
-                        tiles: [],  // Initialize with game setup
-                        assistDeck: [],  // Initialize with game setup
-                        numberDeck: []   // Initialize with game setup
+                        tiles: gameState.tiles,
+                        assistDeck: gameState.decks.assist,
+                        numberDeck: gameState.decks.number
                     };
                     io.to(roomId).emit('gameStart', { 
                         roomId,
