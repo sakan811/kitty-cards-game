@@ -19,30 +19,28 @@ export class GameState {
 
     initializeTiles() {
         const cupColors = ['brown', 'green', 'purple', 'red'];
-        const positions = [0, 1, 2, 3, 5, 6, 7, 8]; // Index 4 is middle tile
+        const positions = [0, 1, 2, 3, 4, 5, 6, 7]; // All positions except 8 (middle tile)
         const tiles = Array(9).fill(null).map((_, index) => ({
             index,
-            cupColor: 'white',
+            cupColor: 'white', // Default color
             hasNumber: false,
             number: null
         }));
 
-        // Remove middle tile (index 4)
-        tiles[4] = { index: 4, cupColor: null, hasNumber: false, number: null };
+        // Set middle tile (index 8)
+        tiles[8] = { index: 8, cupColor: null, hasNumber: false, number: null };
 
-        // Shuffle positions for colored cups
+        // Shuffle positions to determine which positions get colored cups
         for (let i = positions.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [positions[i], positions[j]] = [positions[j], positions[i]];
         }
-
-        // Shuffle colors and allow duplicates by doubling the array
-        const shuffledColors = [...cupColors, ...cupColors].sort(() => Math.random() - 0.5);
-        const selectedColors = shuffledColors.slice(0, 4);
-
-        // Assign colors to random positions
-        positions.slice(0, 4).forEach((pos, idx) => {
-            tiles[pos].cupColor = selectedColors[idx];
+        
+        // Randomly assign colors to the first 4 positions
+        // Colors can be duplicated
+        positions.slice(0, 4).forEach(pos => {
+            const randomColorIndex = Math.floor(Math.random() * cupColors.length);
+            tiles[pos].cupColor = cupColors[randomColorIndex];
         });
 
         return { tiles };
@@ -51,7 +49,15 @@ export class GameState {
     createAssistDeck() {
         // Create and shuffle assist deck
         const assistDeck = [];
-        // Add assist cards logic here
+        const assistTypes = ['double', 'swap', 'peek'];
+        
+        // Create 2 of each assist card type
+        for (const type of assistTypes) {
+            for (let i = 0; i < 2; i++) {
+                assistDeck.push({ type: 'assist', action: type });
+            }
+        }
+        
         return this.shuffleDeck(assistDeck);
     }
 
@@ -136,7 +142,7 @@ export class GameState {
 
     checkGameEnd() {
         const allTilesOccupied = this.tiles.tiles
-            .filter((tile, index) => index !== 4) // Exclude middle tile
+            .filter((tile, index) => index !== 8) // Exclude middle tile
             .every(tile => tile.hasNumber);
             
         if (allTilesOccupied) {
