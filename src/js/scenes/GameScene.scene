@@ -131,6 +131,32 @@
             "y": 726,
             "scaleX": 0.1595550664518873,
             "scaleY": 0.1595550664518873
+        },
+        {
+            "type": "Rectangle",
+            "id": "c41513e8-2a39-4d71-bd67-7324a9b2173f",
+            "label": "exit_room_button",
+            "useGameObjectName": true,
+            "x": 163,
+            "y": 119,
+            "scaleX": 1.543124275392251,
+            "scaleY": 0.8531517820480566,
+            "isFilled": true,
+            "width": 128,
+            "height": 128
+        },
+        {
+            "type": "Rectangle",
+            "id": "870c14e5-5c1d-4ff2-a465-bd21676bcb89",
+            "label": "end_turn_button",
+            "useGameObjectName": true,
+            "x": 723,
+            "y": 1481,
+            "scaleX": 1.543124275392251,
+            "scaleY": 0.8531517820480566,
+            "isFilled": true,
+            "width": 128,
+            "height": 128
         }
     ],
     "plainObjects": [],
