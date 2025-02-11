@@ -167,27 +167,19 @@ class GameScene extends Phaser.Scene {
 		assistCard.scaleX = 0.2179062670624429;
 		assistCard.scaleY = 0.2179062670624429;
 
-		// Create cups based on server's game state
-		if (this.gameState?.tiles?.tiles) {
-			console.log('Creating cups with tiles data:', this.gameState.tiles);
-			this.cupPositions.forEach((pos, index) => {
-				const tileData = this.gameState.tiles.tiles[index];
-				// Skip only the middle tile (index 8), create white cups for uncolored positions
-				if (index !== 8) { // Only skip middle tile
-					const cupColor = tileData?.cupColor || 'white'; // Default to white if no color specified
-					const cupKey = `cup-${cupColor}`;
-					console.log(`Creating cup at index ${index} with color ${cupColor}`);
-					const cup = this.add.image(pos.x, pos.y, cupKey);
-					cup.scaleX = 0.1595550664518873;
-					cup.scaleY = 0.1595550664518873;
-					cup.setData('color', cupColor);
-					cup.setData('tileIndex', index);
-					cup.setInteractive();
-				}
-			});
-		} else {
-			console.error('Invalid tiles data in game state:', this.gameState);
-		}
+		// exit_room_button
+		const exit_room_button = this.add.rectangle(163, 119, 128, 128);
+		exit_room_button.name = "exit_room_button";
+		exit_room_button.scaleX = 1.543124275392251;
+		exit_room_button.scaleY = 0.8531517820480566;
+		exit_room_button.isFilled = true;
+
+		// end_turn_button
+		const end_turn_button = this.add.rectangle(723, 1481, 128, 128);
+		end_turn_button.name = "end_turn_button";
+		end_turn_button.scaleX = 1.543124275392251;
+		end_turn_button.scaleY = 0.8531517820480566;
+		end_turn_button.isFilled = true;
 
 		this.events.emit("scene-awake");
 	}
