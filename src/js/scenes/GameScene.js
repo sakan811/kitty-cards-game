@@ -52,41 +52,41 @@ class GameScene extends Phaser.Scene {
 		this.initData = data;
 		
 		// If no data or invalid data, emit error event
-		if (!data || Object.keys(data).length === 0) {
-			console.log('No game data provided, emitting error...');
-			this.events.emit('gameError', 'No game data provided');
-			return;
-		}
-		
-		// Validate game data
-		if (!data?.socket || !data?.roomCode || !data?.players || !data?.gameState || !data?.playerId) {
+		if (!data || !data.room || !data.roomCode || !data.playerId) {
 			console.error('Missing required game data:', data);
 			this.events.emit('gameError', 'Invalid game data');
 			return;
 		}
 
-		// Validate tiles data specifically
-		if (!data.gameState.tiles || !data.gameState.tiles.tiles) {
-			console.error('Missing tiles data in game state');
-			this.events.emit('gameError', 'Invalid game state');
-			return;
-		}
-
 		// Store game data
-		this.socket = data.socket;
+		this.socket = data.room;
 		this.roomCode = data.roomCode;
-		this.players = data.players;
-		this.currentTurn = data.currentTurn;
 		this.playerId = data.playerId;
+		this.currentTurn = data.currentTurn;
 		this.isPlayerTurn = this.currentTurn === this.playerId;
-		this.gameState = data.gameState; // Store the full game state
+		this.gameState = data.gameState;
 		
 		// Initialize managers
 		this.boardManager = new BoardManager(this);
 		this.socketManager = new SocketManager(this);
 		this.uiManager = new UIManager(this);
 
+		// Set up room message handlers
+		this.socket.onMessage('gameEnded', (message) => {
+			console.log('Game ended:', message);
+			this.events.emit('gameError', message.reason);
+		});
+
+		this.socket.onStateChange((state) => {
+			console.log('Room state changed:', state);
+			this.handleGameUpdate({
+				type: 'gameState',
+				gameState: state
+			});
+		});
+
 		this.isInitialized = true;
+		console.log('Game scene initialized with state:', this.gameState);
 	}
 
 	preload() {
@@ -111,7 +111,7 @@ class GameScene extends Phaser.Scene {
 		// Create base layout
 		this.editorCreate();
 
-		// Create UI elements
+		// Create UI elements first
 		if (this.uiManager) {
 			this.uiManager.createUIElements();
 		}
@@ -122,24 +122,36 @@ class GameScene extends Phaser.Scene {
 		// Show welcome message
 		this.showGameStartMessage();
 
-		// Emit ready event to server
-		if (this.socket && this.roomCode) {
-			this.socket.emit('gameSceneReady', this.roomCode);
+		// Emit ready event to server only if socket is connected
+		if (this.socket && this.socket.hasJoined) {
+			try {
+				this.socket.send('gameSceneReady');
+			} catch (error) {
+				console.warn('Failed to send ready message:', error);
+				// Handle reconnection if needed
+				if (this.uiManager) {
+					this.uiManager.showErrorMessage('Connection lost. Reconnecting...');
+				}
+				this.events.emit('gameError', 'Connection lost');
+			}
 		}
 	}
 
 	shutdown() {
 		console.log('GameScene shutting down');
 		
-		// Clean up managers
-		if (this.socketManager) {
-			this.socketManager.removeListeners();
-		}
+		// Clean up managers in reverse order
 		if (this.uiManager) {
 			this.uiManager.cleanup();
+			this.uiManager = null;
+		}
+		if (this.socketManager) {
+			this.socketManager.removeListeners();
+			this.socketManager = null;
 		}
 		if (this.boardManager) {
 			this.boardManager.cleanup();
+			this.boardManager = null;
 		}
 
 		// Clean up any remaining DOM elements
@@ -162,7 +174,7 @@ class GameScene extends Phaser.Scene {
 		const gameBoard = this.add.container(0, 0);
 
 		// Create and position cups based on game state
-		this.gameState.tiles.tiles.forEach((tileData, index) => {
+		this.gameState.tiles.forEach((tileData, index) => {
 			if (index === 8) return; // Skip middle tile (index 8)
 			
 			const position = this.cupPositions[index];
@@ -214,36 +226,40 @@ class GameScene extends Phaser.Scene {
 	handleGameUpdate(data) {
 		console.log('Handling game update:', data);
 		
-		switch (data.type) {
-			case 'cardDraw':
-				this.boardManager.handleCardDraw(data.data);
-				break;
-			case 'cardPlay':
-				this.boardManager.handleCardPlay(data.data);
-				break;
-			case 'turnEnd':
-				this.handleTurnUpdate(data.data);
-				break;
-			case 'gameState':
-				this.boardManager.updateGameState(data.gameState);
-				break;
-		}
+		if (!data) return;
 
-		// Update turn state
-		if (data.gameState) {
-			this.currentTurn = data.gameState.currentPlayer;
+		if (data.type === 'gameState' && data.gameState) {
+			// Update game state from Colyseus room state
+			const state = data.gameState;
+			this.currentTurn = state.currentPlayer;
 			this.isPlayerTurn = this.currentTurn === this.playerId;
-			this.uiManager.updateTurnIndicator(this.isPlayerTurn);
+			
+			// Update board state if manager exists
+			if (this.boardManager) {
+				this.boardManager.updateGameState(state);
+			}
+			
+			// Update UI if manager exists
+			if (this.uiManager) {
+				this.uiManager.updateTurnIndicator(this.isPlayerTurn);
+			}
 		}
 	}
 
 	handleTurnUpdate(data) {
+		if (!data) return;
+		
 		this.currentTurn = data.nextPlayer;
 		this.isPlayerTurn = this.currentTurn === this.playerId;
-		this.uiManager.updateTurnIndicator(this.isPlayerTurn);
+		
+		if (this.uiManager) {
+			this.uiManager.updateTurnIndicator(this.isPlayerTurn);
+		}
 	}
 
 	showGameStartMessage() {
+		if (!this.add) return; // Scene not ready
+		
 		const message = this.add.text(this.cameras.main.centerX, 100, 'Game Started!', {
 			fontSize: '32px',
 			fontFamily: 'Arial',

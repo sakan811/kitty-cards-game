@@ -136,11 +136,40 @@ export class UIManager {
 
         const messageText = this.uiElements.messageText;
         messageText.setText(message);
+        messageText.setVisible(true);
         messageText.setAlpha(1);
 
         this.messageTimeout = setTimeout(() => {
             messageText.setAlpha(0);
+            messageText.setVisible(false);
         }, duration);
+    }
+
+    showErrorMessage(message) {
+        // Check if message text element exists
+        if (!this.uiElements.messageText) {
+            console.warn('Message text element not initialized');
+            return;
+        }
+
+        // Clear any existing timeout
+        if (this.messageTimeout) {
+            clearTimeout(this.messageTimeout);
+        }
+
+        const messageText = this.uiElements.messageText;
+        messageText.setText(message);
+        messageText.setVisible(true);
+        messageText.setAlpha(1);
+        messageText.setBackgroundColor('#ff0000');
+
+        this.messageTimeout = setTimeout(() => {
+            if (messageText) {
+                messageText.setAlpha(0);
+                messageText.setVisible(false);
+                messageText.setBackgroundColor('#00000080'); // Reset to default
+            }
+        }, 3000);
     }
 
     updateTurnIndicator() {
