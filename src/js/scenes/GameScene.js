@@ -158,27 +158,38 @@ class GameScene extends Phaser.Scene {
 			return;
 		}
 
+		// Create base game board container
+		const gameBoard = this.add.container(0, 0);
+
+		// Create and position cups based on game state
+		this.gameState.tiles.tiles.forEach((tileData, index) => {
+			if (index === 8) return; // Skip middle tile (index 8)
+			
+			const position = this.cupPositions[index];
+			if (position && tileData.cupColor) {
+				const cup = this.add.image(position.x, position.y, `cup-${tileData.cupColor}`);
+				cup.setScale(0.16); // Adjust scale to match the game board
+				gameBoard.add(cup);
+			}
+		});
+
 		// Add card decks
 		const numberCard = this.add.image(383, 735, "number-card-back");
-		numberCard.scaleX = 0.1571092064666651;
-		numberCard.scaleY = 0.1571092064666651;
+		numberCard.setScale(0.16);
 
 		const assistCard = this.add.image(496, 734, "assist-card-back");
-		assistCard.scaleX = 0.2179062670624429;
-		assistCard.scaleY = 0.2179062670624429;
+		assistCard.setScale(0.22);
 
 		// exit_room_button
 		const exit_room_button = this.add.rectangle(163, 119, 128, 128);
 		exit_room_button.name = "exit_room_button";
-		exit_room_button.scaleX = 1.543124275392251;
-		exit_room_button.scaleY = 0.8531517820480566;
+		exit_room_button.setScale(1.54, 0.85);
 		exit_room_button.isFilled = true;
 
 		// end_turn_button
 		const end_turn_button = this.add.rectangle(723, 1481, 128, 128);
 		end_turn_button.name = "end_turn_button";
-		end_turn_button.scaleX = 1.543124275392251;
-		end_turn_button.scaleY = 0.8531517820480566;
+		end_turn_button.setScale(1.54, 0.85);
 		end_turn_button.isFilled = true;
 
 		this.events.emit("scene-awake");
