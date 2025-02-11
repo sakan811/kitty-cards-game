@@ -1,78 +1,121 @@
-export class GameState {
+import { Schema, MapSchema, ArraySchema, defineTypes } from "@colyseus/schema";
+
+export class Player extends Schema {
     constructor() {
-        this.players = new Map();
-        this.currentPlayer = null;
-        this.turnState = 'assist_phase'; // assist_phase -> number_phase -> end_turn
-        
-        // Initialize decks
-        this.decks = {
-            assist: this.createAssistDeck(),
-            number: this.createNumberDeck()
-        };
-        
-        // Initialize game board
-        this.tiles = this.initializeTiles();
-        this.discardPile = [];
+        super();
+        this.id = "";
+        this.ready = false;
+        this.hasDrawnAssist = false;
+        this.hasDrawnNumber = false;
+        this.score = 0;
+        this.hand = new ArraySchema();
+    }
+}
+defineTypes(Player, {
+    id: "string",
+    ready: "boolean",
+    hasDrawnAssist: "boolean",
+    hasDrawnNumber: "boolean",
+    score: "number",
+    hand: ["string"]
+});
+
+export class Tile extends Schema {
+    constructor() {
+        super();
+        this.index = 0;
+        this.cupColor = 'white';
+        this.hasNumber = false;
+        this.number = null;
+    }
+}
+defineTypes(Tile, {
+    index: "number",
+    cupColor: "string",
+    hasNumber: "boolean",
+    number: "number"
+});
+
+export class Card extends Schema {
+    constructor() {
+        super();
+        this.type = "";
+        this.color = "";
+        this.value = 0;
+        this.action = "";
+    }
+}
+defineTypes(Card, {
+    type: "string",
+    color: "string",
+    value: "number",
+    action: "string"
+});
+
+export class GameState extends Schema {
+    constructor() {
+        super();
+        this.players = new MapSchema();
+        this.tiles = new ArraySchema();
+        this.assistDeck = new ArraySchema();
+        this.numberDeck = new ArraySchema();
+        this.discardPile = new ArraySchema();
+        this.currentPlayer = "";
+        this.turnState = 'assist_phase';
         this.gameEnded = false;
-        this.scores = new Map();
+        
+        this.initializeDecks();
+        this.initializeTiles();
+    }
+
+    initializeDecks() {
+        // Initialize assist deck
+        const assistTypes = ['double', 'swap', 'peek'];
+        for (const type of assistTypes) {
+            for (let i = 0; i < 2; i++) {
+                const card = new Card();
+                card.type = 'assist';
+                card.action = type;
+                this.assistDeck.push(card);
+            }
+        }
+        this.shuffleDeck(this.assistDeck);
+
+        // Initialize number deck
+        const colors = ['brown', 'green', 'purple', 'red', 'white'];
+        for (const color of colors) {
+            for (let value = 1; value <= 10; value++) {
+                const card = new Card();
+                card.type = 'number';
+                card.color = color;
+                card.value = value;
+                this.numberDeck.push(card);
+            }
+        }
+        this.shuffleDeck(this.numberDeck);
     }
 
     initializeTiles() {
         const cupColors = ['brown', 'green', 'purple', 'red'];
-        const positions = [0, 1, 2, 3, 4, 5, 6, 7]; // All positions except 8 (middle tile)
-        const tiles = Array(9).fill(null).map((_, index) => ({
-            index,
-            cupColor: 'white', // Default color
-            hasNumber: false,
-            number: null
-        }));
+        const positions = [0, 1, 2, 3, 4, 5, 6, 7];
+        
+        // Initialize all tiles with white cups
+        for (let i = 0; i < 9; i++) {
+            const tile = new Tile();
+            tile.index = i;
+            tile.cupColor = 'white';
+            this.tiles.push(tile);
+        }
 
         // Set middle tile (index 8)
-        tiles[8] = { index: 8, cupColor: null, hasNumber: false, number: null };
+        this.tiles[8].cupColor = null;
 
-        // Shuffle positions to determine which positions get colored cups
-        for (let i = positions.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [positions[i], positions[j]] = [positions[j], positions[i]];
-        }
-        
-        // Randomly assign colors to the first 4 positions
-        // Colors can be duplicated
+        // Shuffle positions and assign random colors to 4 tiles
+        this.shuffleArray(positions);
         positions.slice(0, 4).forEach(pos => {
-            const randomColorIndex = Math.floor(Math.random() * cupColors.length);
-            tiles[pos].cupColor = cupColors[randomColorIndex];
+            const randomColor = cupColors[Math.floor(Math.random() * cupColors.length)];
+            this.tiles[pos].cupColor = randomColor;
         });
-
-        return { tiles };
-    }
-
-    createAssistDeck() {
-        // Create and shuffle assist deck
-        const assistDeck = [];
-        const assistTypes = ['double', 'swap', 'peek'];
-        
-        // Create 2 of each assist card type
-        for (const type of assistTypes) {
-            for (let i = 0; i < 2; i++) {
-                assistDeck.push({ type: 'assist', action: type });
-            }
-        }
-        
-        return this.shuffleDeck(assistDeck);
-    }
-
-    createNumberDeck() {
-        const numberDeck = [];
-        const colors = ['brown', 'green', 'purple', 'red', 'white'];
-        
-        // Create number cards with colors
-        for (const color of colors) {
-            for (let value = 1; value <= 10; value++) {
-                numberDeck.push({ type: 'number', color, value });
-            }
-        }
-        
-        return this.shuffleDeck(numberDeck);
     }
 
     shuffleDeck(deck) {
@@ -80,7 +123,23 @@ export class GameState {
             const j = Math.floor(Math.random() * (i + 1));
             [deck[i], deck[j]] = [deck[j], deck[i]];
         }
-        return deck;
+    }
+
+    shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+    }
+
+    calculateScore(card, cupColor) {
+        if (card.color === cupColor) {
+            return card.value * 2; // Double points for matching colors
+        }
+        if (cupColor === 'white') {
+            return card.value; // Normal points for white cups
+        }
+        return 0; // No points for non-matching colors
     }
 
     initializePlayer(playerId) {
@@ -112,16 +171,6 @@ export class GameState {
         return null;
     }
 
-    calculateScore(card, cupColor) {
-        if (card.color === cupColor) {
-            return card.value * 2; // Double points for matching colors
-        }
-        if (cupColor === 'white') {
-            return card.value; // Normal points for white cups
-        }
-        return 0; // No points for non-matching colors
-    }
-
     nextTurn() {
         const playerIds = Array.from(this.players.keys());
         const currentIndex = playerIds.indexOf(this.currentPlayer);
@@ -149,4 +198,14 @@ export class GameState {
             this.gameEnded = true;
         }
     }
-} 
+}
+defineTypes(GameState, {
+    players: { map: Player },
+    tiles: [Tile],
+    assistDeck: [Card],
+    numberDeck: [Card],
+    discardPile: [Card],
+    currentPlayer: "string",
+    turnState: "string",
+    gameEnded: "boolean"
+}); 
