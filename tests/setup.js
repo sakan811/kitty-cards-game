@@ -184,87 +184,92 @@ global.cancelAnimationFrame = vi.fn();
 // Mock performance.now()
 global.performance.now = vi.fn(() => Date.now());
 
-// Mock Socket.IO client
-const mockSocketClient = {
-    eventHandlers: {},
-    on: vi.fn((event, callback) => {
-        if (!mockSocketClient.eventHandlers[event]) {
-            mockSocketClient.eventHandlers[event] = [];
+// Mock room implementation for testing
+export const mockRoom = {
+    hasJoined: true,
+    sessionId: 'test-player',
+    id: 'test-room',
+    connection: {
+        isOpen: true,
+        close: vi.fn()
+    },
+    state: {
+        players: new Map(),
+        tiles: Array(9).fill({ cupColor: 'white' }),
+        currentPlayer: 'test-player',
+        gameStarted: true
+    },
+    messageHandlers: new Map(),
+    stateHandlers: [],
+    errorHandlers: [],
+    leaveHandlers: [],
+
+    onMessage(event, handler) {
+        if (!this.messageHandlers.has(event)) {
+            this.messageHandlers.set(event, []);
         }
-        mockSocketClient.eventHandlers[event].push(callback);
-        return mockSocketClient;
-    }),
-    once: vi.fn((event, callback) => {
-        if (!mockSocketClient.eventHandlers[event]) {
-            mockSocketClient.eventHandlers[event] = [];
+        this.messageHandlers.get(event).push(handler);
+        return this;
+    },
+
+    onStateChange(handler) {
+        this.stateHandlers.push(handler);
+        return this;
+    },
+
+    onError(handler) {
+        this.errorHandlers.push(handler);
+        return this;
+    },
+
+    onLeave(handler) {
+        this.leaveHandlers.push(handler);
+        return this;
+    },
+
+    send(event, data) {
+        if (!this.hasJoined) {
+            throw new Error('Room not connected');
         }
-        mockSocketClient.eventHandlers[event].push((...args) => {
-            callback(...args);
-            mockSocketClient.eventHandlers[event] = mockSocketClient.eventHandlers[event].filter(cb => cb !== callback);
-        });
-        return mockSocketClient;
-    }),
-    emit: vi.fn((event, ...args) => {
-        if (mockSocketClient.eventHandlers[event]) {
-            mockSocketClient.eventHandlers[event].forEach(callback => callback(...args));
+        const handlers = this.messageHandlers.get(event);
+        if (handlers) {
+            handlers.forEach(handler => handler(data));
         }
-        return mockSocketClient;
-    }),
-    id: 'test-socket-id',
-    disconnect: vi.fn(),
-    close: vi.fn(),
-    join: vi.fn(),
-    to: vi.fn(() => ({
-        emit: vi.fn()
-    })),
-    connect: vi.fn(),
-    connected: true,
-    disconnected: false,
-    io: {
-        opts: {
-            transports: ['websocket']
+        return this;
+    },
+
+    leave() {
+        this.hasJoined = false;
+        this.leaveHandlers.forEach(handler => handler(4000));
+        return Promise.resolve();
+    },
+
+    removeAllListeners() {
+        this.messageHandlers.clear();
+        this.stateHandlers = [];
+        this.errorHandlers = [];
+        this.leaveHandlers = [];
+    },
+
+    // Helper methods for testing
+    simulateError(code, message) {
+        this.errorHandlers.forEach(handler => handler(code, message));
+    },
+
+    simulateStateChange(newState) {
+        this.stateHandlers.forEach(handler => handler(newState));
+    },
+
+    simulateMessage(event, data) {
+        const handlers = this.messageHandlers.get(event);
+        if (handlers) {
+            handlers.forEach(handler => handler(data));
         }
     }
 };
 
-// Mock Socket.IO server
-const mockSocketServer = {
-    eventHandlers: {},
-    on: vi.fn((event, callback) => {
-        if (!mockSocketServer.eventHandlers[event]) {
-            mockSocketServer.eventHandlers[event] = [];
-        }
-        mockSocketServer.eventHandlers[event].push(callback);
-        return mockSocketServer;
-    }),
-    once: vi.fn((event, callback) => {
-        if (!mockSocketServer.eventHandlers[event]) {
-            mockSocketServer.eventHandlers[event] = [];
-        }
-        mockSocketServer.eventHandlers[event].push((...args) => {
-            callback(...args);
-            mockSocketServer.eventHandlers[event] = mockSocketServer.eventHandlers[event].filter(cb => cb !== callback);
-        });
-        return mockSocketServer;
-    }),
-    emit: vi.fn((event, ...args) => {
-        if (mockSocketServer.eventHandlers[event]) {
-            mockSocketServer.eventHandlers[event].forEach(callback => callback(...args));
-        }
-        return mockSocketServer;
-    }),
-    to: vi.fn(() => ({
-        emit: vi.fn()
-    })),
-    close: vi.fn(),
-    join: vi.fn(),
-    sockets: {
-        adapter: {
-            rooms: new Map(),
-            sids: new Map()
-        }
-    }
-};
+// Export the mock room
+export { mockRoom };
 
 // Mock io constructor
 global.io = vi.fn(() => mockSocketClient);
