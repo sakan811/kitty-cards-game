@@ -10,6 +10,10 @@ interface GameState {
     players: Map<string, Player>;
     currentPlayer: string;
     gameStarted: boolean;
+    tiles: Array<{
+        cupColor?: string;
+        tileIndex?: number;
+    }>;
 }
 
 interface Player {
@@ -18,7 +22,7 @@ interface Player {
 }
 
 interface SceneData {
-    room: Room;
+    room: Room<GameState>;
     roomCode: string;
     playerId: string;
     currentTurn: string;
@@ -32,9 +36,12 @@ const Game: React.FC = () => {
     const { gameState, setGameState } = useGame();
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(true);
+    const initializationRef = useRef<boolean>(false);
 
     useEffect(() => {
         const room = gameClient.getRoom();
+        let cleanupStarted = false;
+        let sceneInitialized = false;
         
         if (!room || !gameState.roomCode) {
             console.log('Invalid game state or room connection');
@@ -43,18 +50,68 @@ const Game: React.FC = () => {
             return;
         }
 
-        let gameInstance: Phaser.Game | null = null;
-
         // Initialize Phaser game
         const initGame = async () => {
+            // Prevent multiple initializations
+            console.log('Checking initialization state...');
+            if (initializationRef.current) {
+                console.log('Game already initializing or initialized, skipping');
+                return;
+            }
+            
+            // Set initialization flag
+            initializationRef.current = true;
+            console.log('Starting game initialization...');
+
             try {
                 setIsLoading(true);
                 
+                // Wait for room state to be ready and check if players are ready
+                if (!room.state) {
+                    console.log('Waiting for room state...');
+                    await new Promise<void>((resolve) => {
+                        const checkState = () => {
+                            if (room.state) {
+                                resolve();
+                            }
+                        };
+                        room.onStateChange(checkState);
+                        // Initial check
+                        checkState();
+                    });
+                }
+
+                // Check if all players are ready
+                const players = Array.from(room.state.players.values()) as Player[];
+                const allPlayersReady = players.every(player => player.ready);
+                if (!allPlayersReady) {
+                    console.log('Waiting for all players to be ready...');
+                    await new Promise<void>((resolve) => {
+                        const checkPlayers = () => {
+                            const currentPlayers = Array.from(room.state.players.values()) as Player[];
+                            const ready = currentPlayers.every(player => player.ready);
+                            if (ready) {
+                                resolve();
+                            }
+                        };
+                        room.onStateChange(checkPlayers);
+                        // Initial check
+                        checkPlayers();
+                    });
+                }
+
                 // Create new game instance
                 if (gameInstanceRef.current) {
-                    console.log('Destroying existing game instance');
+                    console.log('Cleaning up existing game instance');
                     gameInstanceRef.current.destroy(true);
                     gameInstanceRef.current = null;
+                    // Wait a bit for cleanup to complete
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+
+                if (cleanupStarted) {
+                    console.log('Cleanup started during initialization, aborting');
+                    return;
                 }
 
                 // Configure game
@@ -64,7 +121,7 @@ const Game: React.FC = () => {
                     height: 1600,
                     backgroundColor: '#2d2d2d',
                     parent: 'game',
-                    scene: [], // Remove scene from config, we'll add it manually
+                    scene: GameScene,
                     scale: {
                         mode: Phaser.Scale.FIT,
                         autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -85,13 +142,38 @@ const Game: React.FC = () => {
                 };
 
                 // Create game instance
-                gameInstance = new Phaser.Game(config);
+                console.log('Creating new game instance...');
+                const gameInstance = new Phaser.Game(config);
                 gameInstanceRef.current = gameInstance;
 
                 // Wait for the game to be ready
-                gameInstance.events.once('ready', () => {
+                await new Promise<void>((resolve) => {
+                    gameInstance.events.once('ready', resolve);
+                });
+
+                if (cleanupStarted) {
+                    console.log('Cleanup started after game creation, aborting');
+                    return;
+                }
+
+                // Get the game scene and initialize it properly
+                const gameScene = gameInstance.scene.getScene('GameScene') as unknown as InstanceType<typeof GameScene>;
+                if (!gameScene) {
+                    throw new Error('Failed to get game scene');
+                }
+
+                try {
+                    // Set up error handling first
+                    gameScene.events.on('gameError', (errorMsg: string) => {
+                        if (cleanupStarted) return;
+                        console.error('Game scene error:', errorMsg);
+                        setError(errorMsg + ' Returning to lobby...');
+                        setGameState(prev => ({ ...prev, isPlaying: false }));
+                        setTimeout(() => navigate('/lobby'), 2000);
+                    });
+
                     // Prepare scene data
-                    const sceneData: SceneData = {
+                    const sceneData = {
                         room: room,
                         roomCode: gameState.roomCode!,
                         playerId: room.sessionId,
@@ -99,70 +181,99 @@ const Game: React.FC = () => {
                         gameState: room.state
                     };
                     
-                    console.log('Starting GameScene with data:', sceneData);
-                    
-                    // Add and start scene
-                    if (!gameInstance?.scene.getScene('GameScene')) {
-                        gameInstance?.scene.add('GameScene', GameScene, true, sceneData);
-                    } else {
-                        gameInstance?.scene.start('GameScene', sceneData);
-                    }
-                    
-                    // Set up error handling
-                    const gameScene = gameInstance?.scene.getScene('GameScene');
-                    if (gameScene) {
-                        gameScene.events.on('gameError', (errorMsg: string) => {
-                            console.error('Game scene error:', errorMsg);
-                            setError(errorMsg + ' Returning to lobby...');
-                            setGameState(prev => ({ ...prev, isPlaying: false }));
-                            setTimeout(() => navigate('/lobby'), 2000);
-                        });
-                    }
-                    
-                    setIsLoading(false);
-                });
+                    console.log('Preparing to start GameScene with data:', sceneData);
 
+                    // Stop all scenes first
+                    gameInstance.scene.scenes.forEach(scene => {
+                        if (scene.scene.isActive()) {
+                            scene.scene.stop();
+                        }
+                    });
+
+                    // Wait a bit for scenes to stop
+                    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+
+                    if (cleanupStarted) {
+                        console.log('Cleanup started during scene stop, aborting');
+                        return;
+                    }
+
+                    // Set up scene initialization promise before starting the scene
+                    const initializationPromise = new Promise<void>((resolve, reject) => {
+                        const timeout = setTimeout(() => {
+                            reject(new Error('Scene initialization timeout'));
+                        }, 5000);
+
+                        // Listen for scene creation completion
+                        gameScene.events.once('scene-awake', () => {
+                            console.log('Scene awake event received');
+                            clearTimeout(timeout);
+                            resolve();
+                        });
+                    });
+
+                    // Start the scene with data
+                    console.log('Starting GameScene...');
+                    gameInstance.scene.start('GameScene', sceneData);
+
+                    // Wait for initialization to complete
+                    await initializationPromise;
+                    console.log('Scene initialization completed');
+
+                    sceneInitialized = true;
+                    setIsLoading(false);
+                } catch (error) {
+                    console.error('Failed to initialize game scene:', error);
+                    throw error;
+                }
             } catch (error) {
                 console.error('Failed to initialize game:', error);
-                setError('Failed to start game. Returning to lobby...');
-                setGameState(prev => ({ ...prev, isPlaying: false }));
-                setTimeout(() => navigate('/lobby'), 2000);
+                if (!cleanupStarted) {
+                    setError('Failed to start game. Returning to lobby...');
+                    setGameState(prev => ({ ...prev, isPlaying: false }));
+                    setTimeout(() => navigate('/lobby'), 2000);
+                }
             }
         };
 
         initGame();
 
-        // Room event listeners
-        const handleGameEnded = (message: { reason: string }) => {
-            console.log('Game ended:', message);
-            setError(message.reason + '. Returning to lobby...');
-            setGameState(prev => ({ ...prev, isPlaying: false }));
-            setTimeout(() => navigate('/lobby'), 2000);
-        };
-
-        const handleError = (code: number, message: string) => {
-            setError(`Game error: ${message}`);
-            setGameState(prev => ({ ...prev, isPlaying: false }));
-            setTimeout(() => navigate('/lobby'), 2000);
-        };
-
-        room.onMessage('gameEnded', handleGameEnded);
-        room.onError(handleError);
-
         // Clean up
         return () => {
-            console.log('Cleaning up game instance');
-            if (gameInstance) {
-                try {
-                    gameInstance.destroy(true);
-                    gameInstanceRef.current = null;
-                } catch (error) {
-                    console.error('Error during game cleanup:', error);
-                }
-            }
+            if (cleanupStarted) return;
+            cleanupStarted = true;
+            console.log('Starting cleanup process...');
+            
+            // Remove room listeners first
             if (room) {
                 room.removeAllListeners();
             }
+
+            // Then destroy game instance
+            if (gameInstanceRef.current) {
+                try {
+                    const cleanup = async () => {
+                        if (sceneInitialized) {
+                            const gameScene = gameInstanceRef.current?.scene.getScene('GameScene');
+                            if (gameScene) {
+                                gameScene.events.removeAllListeners();
+                            }
+                        }
+                        gameInstanceRef.current?.destroy(true);
+                        gameInstanceRef.current = null;
+                        // Reset initialization flag after cleanup
+                        initializationRef.current = false;
+                    };
+                    cleanup();
+                } catch (error) {
+                    console.error('Error during game cleanup:', error);
+                }
+            } else {
+                // Reset initialization flag if no game instance exists
+                initializationRef.current = false;
+            }
+            
+            console.log('Cleanup process completed');
         };
     }, [gameState.roomCode]);
 
