@@ -186,13 +186,12 @@ export class LobbyScene extends Phaser.Scene {
             this.showMessage('Starting game...');
 
             // Start GameScene with all necessary data
-            this.scene.start('GameScene', { 
-                socket: socketService.getSocket(),
-                roomCode: this.currentRoomId, // Match GameScene's expected property
+            this.scene.start('GameScene', {
+                room: this.room,
+                roomCode: this.currentRoomId,
                 playerId: this.playerId,
-                players: this.players,
-                gameState,
-                currentTurn: gameState.currentPlayer
+                currentTurn: this.currentTurn,
+                gameState: this.gameState
             });
         }
     }
