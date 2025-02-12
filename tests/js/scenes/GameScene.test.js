@@ -1,4 +1,5 @@
-import { GameScene } from '../../../src/js/scenes/GameScene';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import GameScene from '../../../src/js/scenes/GameScene.ts';
 import { mockRoom } from '../../setup';
 
 describe('GameScene', () => {
