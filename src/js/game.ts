@@ -1,8 +1,8 @@
-import Phaser from './lib/phaser.js';
-import GameScene from './scenes/GameScene.js';
-import { LobbyScene } from './scenes/LobbyScene.js';
+import Phaser from './lib/phaser';
+import GameScene from './scenes/GameScene';
+import { LobbyScene } from './scenes/LobbyScene';
 
-const config = {
+const config: Phaser.Types.Core.GameConfig = {
     type: Phaser.AUTO,
     width: 800,
     height: 600,
@@ -17,16 +17,8 @@ const config = {
         min: {
             width: 375,
             height: 667
-        },
-        max: {
-            width: 1024,
-            height: 1366
         }
-    },
-    dom: {
-        createContainer: true
-    },
-    autoFocus: false
+    }
 };
 
 export default config; 

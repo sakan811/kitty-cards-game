@@ -1,0 +1,384 @@
+import { Room, Client } from 'colyseus';
+import { SocketManager } from '../managers/SocketManager';
+import { BoardManager } from '../managers/BoardManager';
+import { Scene, GameObjects } from 'phaser';
+import type { GameScene as IGameScene, GameState as IGameState } from '../types/game';
+
+interface CupPosition {
+    x: number;
+    y: number;
+}
+
+interface GameState extends IGameState {
+    tiles: Array<{
+        cupColor?: string;
+        tileIndex?: number;
+    }>;
+}
+
+interface InitData {
+    room: Room<GameState>;  // Simplified Room type
+    roomCode: string;
+    playerId: string;
+    currentTurn: string;
+    gameState: GameState;
+}
+
+export default class GameScene extends Scene implements Partial<IGameScene> {
+    socket: Room | null = null;
+    private roomCode: string | null = null;
+    private players: Record<string, any> | null = null;
+    private currentTurn: string | null = null;
+    isPlayerTurn: boolean = false;
+    playerId: string = '';
+    currentPhase: string = 'assist_phase';  // Set default phase
+    hasDrawnAssist: boolean = false;
+    hasDrawnNumber: boolean = false;
+    isDestroyed: boolean = false;
+    turnManager: any = null;
+    isInitialized: boolean = false;  // Make this public
+    private cupPositions: CupPosition[] = [
+        { x: 219, y: 975 }, // bottom left (0)
+        { x: 445, y: 979 }, // bottom middle (1)
+        { x: 666, y: 981 }, // bottom right (2)
+        { x: 222, y: 730 }, // middle left (3)
+        { x: 666, y: 726 }, // middle right (4)
+        { x: 222, y: 516 }, // top left (5)
+        { x: 440, y: 511 }, // top middle (6)
+        { x: 666, y: 507 }, // top right (7)
+        { x: 440, y: 730 }  // center (8)
+    ];
+    private boardManager: BoardManager | null = null;
+    private socketManager: SocketManager | null = null;
+    private gameState: GameState | null = null;
+    private initData: InitData | null = null;
+    private messageText: GameObjects.Text | null = null;
+
+    constructor() {
+        super({
+            key: 'GameScene',
+            active: false
+        });
+        this.resetScene();
+    }
+
+    private resetScene(): void {
+        this.socket = null;
+        this.roomCode = null;
+        this.players = null;
+        this.currentTurn = null;
+        this.isPlayerTurn = false;
+        this.playerId = '';
+        this.currentPhase = 'assist_phase';  // Reset to default phase
+        this.hasDrawnAssist = false;
+        this.hasDrawnNumber = false;
+        this.isDestroyed = false;
+        this.turnManager = null;
+        this.isInitialized = false;
+        this.boardManager = null;
+        this.socketManager = null;
+        this.gameState = null;
+        this.initData = null;
+        this.messageText = null;
+    }
+
+    init(data?: InitData): void {
+        console.log('GameScene init called with data:', data);
+        
+        // Reset scene first
+        this.resetScene();
+
+        // Handle Phaser's internal scene initialization
+        if (!data || Object.keys(data).length === 0) {
+            console.log('Internal Phaser initialization, waiting for game data...');
+            return;
+        }
+
+        try {
+            // Validate required data
+            if (!data.room || !data.roomCode || !data.playerId || !data.gameState) {
+                const missingFields = [];
+                if (!data.room) missingFields.push('room');
+                if (!data.roomCode) missingFields.push('roomCode');
+                if (!data.playerId) missingFields.push('playerId');
+                if (!data.gameState) missingFields.push('gameState');
+                
+                const error = new Error(`Missing required game data: ${missingFields.join(', ')}`);
+                console.error('Initialization error:', error.message, data);
+                this.events.emit('gameError', error.message);
+                throw error;
+            }
+            
+            // Store initialization data
+            this.initData = data;
+            
+            // Initialize basic properties
+            this.socket = data.room;
+            this.roomCode = data.roomCode;
+            this.playerId = data.playerId;
+            this.currentTurn = data.currentTurn;
+            this.isPlayerTurn = this.currentTurn === this.playerId;
+            this.currentPhase = 'assist_phase';
+            this.hasDrawnAssist = false;
+            this.hasDrawnNumber = false;
+            this.gameState = data.gameState;
+
+            console.log('Game properties initialized:', {
+                roomCode: this.roomCode,
+                playerId: this.playerId,
+                currentTurn: this.currentTurn,
+                isPlayerTurn: this.isPlayerTurn
+            });
+
+            // Initialize managers in order
+            try {
+                // Initialize board manager
+                this.boardManager = new BoardManager(this);
+                console.log('Board Manager initialized');
+                
+                this.socketManager = new SocketManager(this);
+                console.log('Socket Manager initialized');
+
+                // Set up socket message handler
+                if (this.socket) {
+                    this.socket.onMessage('*', (client: Client<any, any>, type: string | number, message: any) => {
+                        if (type === 'gameEnded' && this.isInitialized) {
+                            console.log('Game ended:', message);
+                            this.events.emit('gameError', message.reason);
+                        }
+                    });
+                }
+
+                this.isInitialized = true;
+                console.log('Game scene fully initialized with state:', this.gameState);
+            } catch (error) {
+                const msg = error instanceof Error ? error.message : 'Failed to initialize game managers';
+                console.error('Error initializing managers:', error);
+                this.events.emit('gameError', msg);
+                throw error;
+            }
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : 'Failed to initialize game scene';
+            console.error('Error during scene initialization:', error);
+            this.events.emit('gameError', msg);
+            throw error;
+        }
+    }
+
+    preload(): void {
+        this.load.image('number-card-back', '/assets/images/cards/number-card-back.jpg');
+        this.load.image('assist-card-back', '/assets/images/cards/assist-card-back.jpg');
+        
+        ['brown', 'green', 'purple', 'red', 'white'].forEach(color => {
+            this.load.image(`cup-${color}`, `/assets/images/cups/cup-${color}.jpg`);
+        });
+    }
+
+    create(): void {
+        console.log('Creating game scene...');
+        
+        try {
+            // Check if we have initialization data
+            if (!this.initData) {
+                console.log('No initialization data available, waiting...');
+                return;
+            }
+
+            // Check if we're already initialized
+            if (!this.isInitialized || !this.gameState) {
+                console.log('Scene not initialized or missing game state, retrying initialization...');
+                this.init(this.initData);
+                return;
+            }
+
+            console.log('Creating game scene with initialized data:', this.gameState);
+            
+            // Create the game scene elements
+            this.editorCreate();
+
+            // Initialize UI after scene creation
+            if (this.socket && (this.socket as any).hasJoined) {
+                try {
+                    const message = { ready: true };
+                    (this.socket as any).send('gameSceneReady', message);
+                    console.log('Game scene ready message sent');
+                } catch (error) {
+                    console.warn('Failed to send ready message:', error);
+                    this.showErrorMessage('Connection lost');
+                    return;
+                }
+            }
+
+            // Emit scene-awake event after everything is set up
+            console.log('Emitting scene-awake event');
+            this.events.emit('scene-awake');
+        } catch (error) {
+            console.error('Error in create:', error);
+            this.events.emit('gameError', 'Failed to create game scene');
+        }
+    }
+
+    shutdown(): void {
+        if (this.isInitialized) {
+            if (this.socketManager) {
+                this.socketManager.cleanup();
+            }
+            if (this.boardManager) {
+                this.boardManager.cleanup();
+            }
+            
+            this.resetScene();
+            console.log('Game scene cleaned up');
+        }
+    }
+
+    private editorCreate(): void {
+        if (!this.isInitialized || !this.gameState) {
+            console.log('Skipping editorCreate until game data is received');
+            return;
+        }
+
+        const gameBoard = this.add.container(0, 0);
+
+        this.gameState.tiles.forEach((tileData, index) => {
+            if (index === 8) return;
+            
+            const position = this.cupPositions[index];
+            if (position && tileData.cupColor) {
+                const cup = this.add.image(position.x, position.y, `cup-${tileData.cupColor}`);
+                cup.setScale(0.16);
+                gameBoard.add(cup);
+            }
+        });
+
+        const numberCard = this.add.image(383, 735, "number-card-back");
+        numberCard.setScale(0.16);
+
+        const assistCard = this.add.image(496, 734, "assist-card-back");
+        assistCard.setScale(0.22);
+
+        // Create and style exit button
+        const exit_room_button = this.add.rectangle(163, 119, 128, 48, 0x4B5563); // Gray-600 color
+        exit_room_button.name = "exit_room_button";
+        exit_room_button.setScale(1.54, 0.85);
+        exit_room_button.setInteractive({ useHandCursor: true })
+            .on('pointerover', () => {
+                exit_room_button.setFillStyle(0x374151); // Gray-700 for hover
+                exit_room_button.setScale(1.6, 0.9); // Scale up slightly
+            })
+            .on('pointerout', () => {
+                exit_room_button.setFillStyle(0x4B5563); // Back to Gray-600
+                exit_room_button.setScale(1.54, 0.85);
+            });
+
+        // Add text to exit button
+        const exitText = this.add.text(163, 119, 'Exit Room', {
+            fontFamily: 'sans-serif',
+            fontSize: '18px',
+            color: '#ffffff'
+        }).setOrigin(0.5);
+
+        // Create and style end turn button
+        const end_turn_button = this.add.rectangle(723, 1481, 128, 48, 0x4B5563); // Gray-600 color
+        end_turn_button.name = "end_turn_button";
+        end_turn_button.setScale(1.54, 0.85);
+        end_turn_button.setInteractive({ useHandCursor: true })
+            .on('pointerover', () => {
+                if (this.isPlayerTurn && this.hasDrawnAssist && this.hasDrawnNumber) {
+                    end_turn_button.setFillStyle(0x374151); // Gray-700 for hover
+                    end_turn_button.setScale(1.6, 0.9); // Scale up slightly
+                }
+            })
+            .on('pointerout', () => {
+                end_turn_button.setFillStyle(0x4B5563); // Back to Gray-600
+                end_turn_button.setScale(1.54, 0.85);
+            });
+
+        // Add text to end turn button
+        const endTurnText = this.add.text(723, 1481, 'End Turn', {
+            fontFamily: 'sans-serif',
+            fontSize: '18px',
+            color: '#ffffff'
+        }).setOrigin(0.5);
+
+        this.events.emit("scene-awake");
+    }
+
+    private setupGameListeners(): void {
+        this.input.on('gameobjectdown', (pointer: Phaser.Input.Pointer, gameObject: GameObjects.GameObject) => {
+            if (gameObject.name === "exit_room_button" && this.socketManager) {
+                this.socketManager.exitRoom();
+                this.scene.start('LobbyScene'); // Transition back to lobby
+                return;
+            }
+
+            if (gameObject.name === "end_turn_button" && this.socketManager) {
+                if (this.isPlayerTurn && this.hasDrawnAssist && this.hasDrawnNumber) {
+                    this.socketManager.endTurn();
+                }
+                return;
+            }
+
+            if (!this.isPlayerTurn) return;
+
+            const gameObjectWithType = gameObject as GameObjects.GameObject & { type: string; tileIndex?: number };
+
+            if (gameObjectWithType.type === 'Card' && this.socketManager) {
+                this.socketManager.emitCardSelect(gameObject);
+            } else if (gameObjectWithType.type === 'Tile' && gameObjectWithType.tileIndex !== undefined && this.socketManager) {
+                this.socketManager.emitTileClick(gameObjectWithType.tileIndex);
+            }
+        });
+    }
+
+    handleGameUpdate(data: { type: string; gameState: GameState }): void {
+        console.log('Handling game update:', data);
+        
+        if (!data) return;
+
+        if (data.type === 'gameState' && data.gameState) {
+            const state = data.gameState;
+            this.currentTurn = state.currentPlayer;
+            this.isPlayerTurn = this.currentTurn === this.playerId;
+            this.gameState = state;
+            
+            if (this.boardManager) {
+                this.boardManager.updateGameState(state);
+            }
+        }
+    }
+
+    showMessage(message: string, duration: number = 2000): void {
+        if (!this.messageText) {
+            this.messageText = this.add.text(
+                this.game.config.width as number / 2,
+                80,
+                '',
+                {
+                    fontSize: '24px',
+                    color: '#ffffff',
+                    backgroundColor: '#00000080',
+                    padding: { x: 10, y: 5 }
+                }
+            )
+            .setOrigin(0.5)
+            .setDepth(100)
+            .setVisible(false);
+        }
+
+        this.messageText.setText(message);
+        this.messageText.setVisible(true);
+        this.messageText.setAlpha(1);
+
+        this.time.delayedCall(duration, () => {
+            if (this.messageText) {
+                this.messageText.setAlpha(0);
+                this.messageText.setVisible(false);
+            }
+        });
+    }
+
+    showErrorMessage(message: string): void {
+        this.showMessage(message, 3000);
+    }
+} 
