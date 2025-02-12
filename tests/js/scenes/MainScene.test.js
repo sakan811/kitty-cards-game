@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import GameScene from '../../../src/js/scenes/GameScene.js';
+import GameScene from '../../../src/js/scenes/GameScene.ts';
 import { CARD_DIMENSIONS, ASSET_KEYS } from '../../../src/js/config/constants.js';
 
 describe('GameScene', () => {

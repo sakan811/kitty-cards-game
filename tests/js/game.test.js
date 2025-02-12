@@ -1,9 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { LobbyScene } from '../../src/js/scenes/LobbyScene.js';
+import { Game } from '../../src/js/game';
+import { mockRoom } from '../setup';
+import { Room } from 'colyseus.js';
+import { GameState } from '../../src/js/types/game';
+import GameScene from '../../src/js/scenes/GameScene.ts';
+import Phaser from '../../src/js/lib/phaser';
+import { LobbyScene } from '../../src/js/scenes/LobbyScene';
 import { MainScene } from '../../src/js/scenes/MainScene.js';
-import config from '../../src/js/game.js';
+import config from '../../src/js/game';
 import { PreloadScene } from '../../src/js/scenes/PreloadScene.js';
-import GameScene from '../../src/js/scenes/GameScene.js';
 
 describe('Game', () => {
     let game;
