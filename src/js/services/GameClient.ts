@@ -20,6 +20,7 @@ interface ExtendedClient extends Client {
     onError: (callback: (error: Error) => void) => void;
     joinOrCreate: (roomName: string, options?: any) => Promise<Room>;
     joinById: (roomId: string) => Promise<Room>;
+    getAvailableRooms: (roomName: string) => Promise<Room[]>;
 }
 
 interface RoomState {
@@ -147,8 +148,8 @@ export class GameClient {
                         reject(new Error('Connection timeout'));
                     }, this.connectionTimeout);
 
-                    // Test connection by trying to join or create a room
-                    this.client.joinOrCreate('game_room')
+                    // Test connection by checking availability
+                    this.client.getAvailableRooms('game_room')
                         .then(() => {
                             cleanup();
                             this.isConnected = true;
@@ -156,7 +157,7 @@ export class GameClient {
                             resolve(this.client!);
                         })
                         .catch((error) => {
-                            console.error('Failed to join room:', error);
+                            console.error('Failed to check rooms:', error);
                             cleanup();
                             this.handleConnectionFailure(reject);
                         });
@@ -196,50 +197,77 @@ export class GameClient {
         }
     }
 
-    async joinOrCreate(roomName: string = 'game_room', options: any = {}): Promise<Room> {
-        if (!this.isConnected) {
+    async joinById(roomId: string): Promise<Room> {
+        console.log('Attempting to join room by ID:', roomId);
+        
+        if (!this.isConnected || !this.client) {
+            console.log('Not connected, attempting to connect first');
             await this.connect();
+        }
+
+        if (!this.client) {
+            throw new Error('Client not initialized');
         }
 
         try {
             if (this.room) {
+                console.log('Leaving existing room before joining new one');
                 await this.leave();
             }
 
-            if (!this.client) {
-                throw new Error('Client not initialized');
+            console.log('Joining room...');
+            const room = await this.client.joinById(roomId);
+            
+            if (!room) {
+                throw new Error('Failed to join room');
             }
 
-            const newRoom = await this.client.joinOrCreate(roomName, {
+            this.room = room;
+            this.setupRoomListeners();
+            console.log('Successfully joined room:', room.id);
+            return room;
+        } catch (error) {
+            console.error('Failed to join room by ID:', error);
+            throw error;
+        }
+    }
+
+    async joinOrCreate(roomName: string = 'game_room', options: any = {}): Promise<Room> {
+        console.log('Attempting to join or create room:', roomName);
+        
+        if (!this.isConnected || !this.client) {
+            console.log('Not connected, attempting to connect first');
+            await this.connect();
+        }
+
+        if (!this.client) {
+            throw new Error('Client not initialized');
+        }
+
+        try {
+            if (this.room) {
+                console.log('Leaving existing room before joining new one');
+                await this.leave();
+            }
+
+            console.log('Joining or creating room...');
+            const room = await this.client.joinOrCreate(roomName, {
                 ...options,
                 retryTimes: 3,
                 retryDelay: 2000
             });
-
-            if (!newRoom) {
+            
+            if (!room) {
                 throw new Error('Failed to create or join room');
             }
 
-            this.room = newRoom;
+            this.room = room;
+            this.setupRoomListeners();
+            console.log('Successfully joined room:', room.id);
+            return room;
 
-            // Set up room event handlers
-            newRoom.onLeave((code: number) => {
-                this.room = null;
-                if (code > 1000) {
-                    this.attemptReconnect();
-                }
-            });
-
-            newRoom.onError((code: number, message: string) => {
-                console.error('Room error:', code, message);
-                if (code === 4000) { // Connection lost
-                    this.attemptReconnect();
-                }
-            });
-
-            return newRoom;
         } catch (error) {
-            console.error('Failed to join room:', error);
+            console.error('Failed to join or create room:', error);
             throw error;
         }
     }
@@ -262,18 +290,6 @@ export class GameClient {
             console.error('Reconnection attempt failed:', error);
             setTimeout(() => this.attemptReconnect(), 1000 * Math.pow(2, this.reconnectAttempts));
         }
-    }
-
-    async joinById(roomId: string): Promise<Room> {
-        if (!this.client) {
-            throw new Error('Client not initialized');
-        }
-        const room = await this.client.joinById(roomId);
-        if (!room) {
-            throw new Error('Failed to join room');
-        }
-        this.room = room;
-        return room;
     }
 
     setupRoomListeners(): void {
