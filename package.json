@@ -45,6 +45,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "@vitejs/plugin-react-swc": "^3.8.0",
     "autoprefixer": "^10.4.17",
+    "colyseus": "^0.15.57",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
     "eslint": "^8.56.0",
