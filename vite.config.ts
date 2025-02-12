@@ -61,7 +61,7 @@ export default defineConfig({
             '@': path.resolve(__dirname, './src'),
             'assets': path.resolve(__dirname, './src/assets')
         },
-        extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json']
+        extensions: ['.ts', '.tsx', '.js', '.jsx', '.json', '.mjs']
     },
     optimizeDeps: {
         include: ['react', 'react-dom', 'react-router-dom', 'phaser', 'colyseus.js']
