@@ -12,6 +12,7 @@ interface GameState {
     players: Map<string, Player>;
     gameStarted: boolean;
     hostId?: string;
+    currentTurn?: string;
 }
 
 interface GameStartMessage {
@@ -93,7 +94,8 @@ const Lobby: React.FC = () => {
         // Cleanup function that runs before unmount
         return () => {
             mountedRef.current = false;
-            if (!navigatingToGame.current) {
+            // Only disconnect if we're not navigating to game
+            if (!navigatingToGame.current && gameClient.getConnectionStatus()) {
                 gameClient.disconnect();
             }
         };
@@ -128,28 +130,47 @@ const Lobby: React.FC = () => {
                 setCurrentPlayer(current || null);
             }
             
-            if (state.gameStarted && mountedRef.current) {
+            // Check if all players are ready and game has started
+            const allPlayersReady = playersList.length >= 2 && playersList.every(p => p.ready);
+            const shouldStartGame = state.gameStarted && allPlayersReady && mountedRef.current;
+            
+            if (shouldStartGame && !navigatingToGame.current) {
                 navigatingToGame.current = true;
+                // Update game state before navigation
                 setGameState(prev => ({
                     ...prev,
                     isPlaying: true,
-                    players: playersList
+                    players: playersList,
+                    roomCode: room.id,
+                    currentTurn: state.currentTurn || null
                 }));
-                navigate('/game');
+                // Use setTimeout to ensure state is updated before navigation
+                setTimeout(() => {
+                    if (mountedRef.current) {
+                        handleNavigateToGame();
+                    }
+                }, 0);
             }
         };
 
         // Listen for game started event
         const handleGameStarted = (message: GameStartMessage) => {
-            if (!mountedRef.current) return;
+            if (!mountedRef.current || navigatingToGame.current) return;
             
             console.log('Game started:', message);
+            navigatingToGame.current = true;
             setGameState(prev => ({
                 ...prev,
                 isPlaying: true,
-                currentTurn: message.firstPlayer
+                currentTurn: message.firstPlayer,
+                roomCode: room.id
             }));
-            handleNavigateToGame();
+            // Use setTimeout to ensure state is updated before navigation
+            setTimeout(() => {
+                if (mountedRef.current) {
+                    handleNavigateToGame();
+                }
+            }, 0);
         };
 
         room.onMessage('gameStarted', handleGameStarted);
@@ -167,20 +188,17 @@ const Lobby: React.FC = () => {
     };
 
     const handleCreateRoom = async () => {
-        if (!isConnected) {
-            setError('Not connected to server. Please wait or retry connection.');
-            return;
-        }
-
         try {
             setIsLoading(true);
             setError(null);
-            const room = await gameClient.joinOrCreate('game_room');
-            
-            if (!room) {
-                throw new Error('Failed to create room: Room is null');
+
+            // Ensure we're connected first
+            if (!isConnected) {
+                await initializeConnection();
             }
 
+            const room = await gameClient.joinOrCreate('game_room');
+            
             setRoomCode(room.id);
             setPlayerId(room.sessionId);
             setView('waiting');
@@ -203,11 +221,7 @@ const Lobby: React.FC = () => {
 
         } catch (error) {
             console.error('Failed to create room:', error);
-            setError('Failed to create room. Please try again.');
-            // If connection was lost during room creation, try to reconnect
-            if (!gameClient.getConnectionStatus()) {
-                await initializeConnection();
-            }
+            setError(error instanceof Error ? error.message : 'Failed to create room. Please try again.');
         } finally {
             setIsLoading(false);
         }
@@ -221,12 +235,15 @@ const Lobby: React.FC = () => {
 
         try {
             setIsLoading(true);
-            const room = await gameClient.joinById(roomCode);
-            
-            if (!room) {
-                throw new Error('Failed to join room');
+            setError(null);
+
+            // Ensure we're connected first
+            if (!isConnected) {
+                await initializeConnection();
             }
 
+            const room = await gameClient.joinById(roomCode);
+            
             setPlayerId(room.sessionId);
             const playersList = Array.from(room.state.players.values()) as Player[];
             setPlayers(playersList);
@@ -239,7 +256,7 @@ const Lobby: React.FC = () => {
             }));
         } catch (error) {
             console.error('Failed to join room:', error);
-            setError('Failed to join room. Please check the room code and try again.');
+            setError(error instanceof Error ? error.message : 'Failed to join room. Please check the room code and try again.');
         } finally {
             setIsLoading(false);
         }
