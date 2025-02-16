@@ -7,11 +7,11 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
-import { GameRoom } from './rooms/GameRoom.js';
+import { GameRoom } from './rooms/GameRoom';
 
 // Server configuration
 const SERVER_CONFIG = {
-    port: process.env.PORT || 3000
+    port: Number(process.env.PORT) || 3000
 };
 
 // Rate limiting configuration
@@ -43,19 +43,11 @@ if (process.env.NODE_ENV !== 'development') {
 const gameServer = new Server({
     transport: new WebSocketTransport({
         server: httpServer,
-        pingInterval: 1000, // Reduce ping interval for faster connection checks
+        pingInterval: 1000,
         pingMaxRetries: 3,
-        // Increase seat reservation time and add proper WebSocket settings
-        seatReservationTime: 60, // Increase to 60 seconds
         verifyClient: (info, next) => {
-            // Accept all origins
             console.log('Accepting connection from:', info.origin);
             next(true);
-        },
-        // Add WebSocket server options
-        ws: {
-            clientTracking: true,
-            perMessageDeflate: false
         }
     })
 });
@@ -72,19 +64,12 @@ gameServer.define('game_room', GameRoom, {
     maxClients: 2,
     allowReconnection: true,
     reconnectionTimeout: 60,
-    // Add seat reservation settings
-    seatReservationTime: 60,
-    reservedSeatTimeout: 60,
-    // Add retry join options
     retryTimes: 3,
     retryDelay: 2000,
     // Development settings
     ...((process.env.NODE_ENV === 'development') ? {
-        // Disable presence for development
         presence: false,
-        // Increase timeouts for development
-        reconnectionTimeout: 120,
-        seatReservationTime: 120
+        reconnectionTimeout: 120
     } : {})
 })
 .enableRealtimeListing();
