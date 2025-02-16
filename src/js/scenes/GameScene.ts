@@ -53,6 +53,7 @@ export default class GameScene extends Scene implements Partial<IGameScene> {
     private gameState: GameState | null = null;
     private initData: InitData | null = null;
     private messageText: GameObjects.Text | null = null;
+    private turnText: GameObjects.Text | null = null;
 
     constructor() {
         super({
@@ -80,6 +81,7 @@ export default class GameScene extends Scene implements Partial<IGameScene> {
         this.gameState = null;
         this.initData = null;
         this.messageText = null;
+        this.turnText = null;
     }
 
     init(data?: InitData): void {
@@ -262,6 +264,21 @@ export default class GameScene extends Scene implements Partial<IGameScene> {
 
         const gameBoard = this.add.container(0, 0);
 
+        // Add turn indicator text at the top of the screen
+        this.turnText = this.add.text(
+            this.game.config.width as number / 2,
+            100,
+            this.isPlayerTurn ? 'Your Turn!' : "Opponent's Turn",
+            {
+                fontFamily: 'sans-serif',
+                fontSize: '24px',
+                color: this.isPlayerTurn ? '#4ADE80' : '#FB7185', // Green for your turn, Red for opponent's turn
+                backgroundColor: '#1F2937',
+                padding: { x: 16, y: 8 },
+                align: 'center'
+            }
+        ).setOrigin(0.5).setDepth(100);
+
         this.gameState.tiles.forEach((tileData, index) => {
             if (index === 8) return;
             
@@ -385,6 +402,13 @@ export default class GameScene extends Scene implements Partial<IGameScene> {
             const state = data.gameState;
             this.currentTurn = state.currentPlayer;
             this.isPlayerTurn = this.currentTurn === this.playerId;
+            
+            // Update turn indicator text
+            if (this.turnText) {
+                this.turnText.setText(this.isPlayerTurn ? 'Your Turn!' : "Opponent's Turn");
+                this.turnText.setColor(this.isPlayerTurn ? '#4ADE80' : '#FB7185');
+            }
+
             this.gameState = state;
             
             if (this.boardManager) {
