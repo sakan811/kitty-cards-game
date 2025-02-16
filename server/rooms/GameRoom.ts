@@ -1,10 +1,10 @@
-import { Room } from "@colyseus/core";
-import { GameState, Player } from "../models/GameState.js";
+import { Room, Client } from "@colyseus/core";
+import { GameState, Player, Card, Tile, CupColor } from "../models/GameState";
 
-export class GameRoom extends Room {
+export class GameRoom extends Room<GameState> {
     maxClients = 2;
 
-    onCreate(options) {
+    onCreate(options: any): void {
         console.log("GameRoom created!", options);
 
         // Initialize room state
@@ -17,7 +17,7 @@ export class GameRoom extends Room {
         this.onMessage("endTurn", (client) => this.handleEndTurn(client));
     }
 
-    onJoin(client, options) {
+    onJoin(client: Client, options?: any): void {
         console.log("Client joined!", client.sessionId);
 
         // Create new player instance
@@ -33,7 +33,7 @@ export class GameRoom extends Room {
         }
     }
 
-    onLeave(client, consented) {
+    onLeave(client: Client, consented: boolean): void {
         console.log("Client left!", client.sessionId);
         
         // Remove player from game state
@@ -44,7 +44,7 @@ export class GameRoom extends Room {
         this.broadcast("gameEnded", { reason: "Player left" });
     }
 
-    handlePlayerReady(client, message) {
+    handlePlayerReady(client: Client, message: any): void {
         const player = this.state.players.get(client.sessionId);
         if (!player) return;
 
@@ -58,26 +58,40 @@ export class GameRoom extends Room {
         }
     }
 
-    startGame() {
-        // Randomly choose first player
-        const players = Array.from(this.state.players.keys());
-        this.state.currentPlayer = players[Math.floor(Math.random() * players.length)];
-        
+    startGame(): void {
         // Initialize game state
+        this.state.gameStarted = true;
+        this.state.gameEnded = false;
+        
+        // Set random turn order and get first player
+        const firstPlayer = this.state.setRandomTurnOrder();
+        
+        // Reset all player states
+        this.state.players.forEach(player => {
+            player.hasDrawnAssist = false;
+            player.hasDrawnNumber = false;
+            player.score = 0;
+            player.hand.length = 0;
+        });
+
+        // Set initial game state
         this.state.turnState = 'assist_phase';
+        
+        // Notify all clients about game start and turn order
         this.broadcast("gameStarted", {
-            firstPlayer: this.state.currentPlayer
+            firstPlayer,
+            turnOrder: Array.from(this.state.turnOrder)
         });
     }
 
-    handleDrawCard(client, message) {
+    handleDrawCard(client: Client, message: { cardType: 'assist' | 'number' }): void {
         if (client.sessionId !== this.state.currentPlayer) return;
 
         const player = this.state.players.get(client.sessionId);
         if (!player) return;
 
         const { cardType } = message;
-        let card;
+        let card: Card | undefined;
 
         if (cardType === 'assist' && !player.hasDrawnAssist) {
             card = this.state.assistDeck.shift();
@@ -94,7 +108,7 @@ export class GameRoom extends Room {
         }
     }
 
-    handlePlayCard(client, message) {
+    handlePlayCard(client: Client, message: { cardIndex: number, tileIndex: number }): void {
         if (client.sessionId !== this.state.currentPlayer) return;
 
         const player = this.state.players.get(client.sessionId);
@@ -115,7 +129,7 @@ export class GameRoom extends Room {
             tile.number = card.value;
 
             // Calculate and update score
-            const score = this.state.calculateScore(card, tile.cupColor);
+            const score = this.state.calculateScore(card, tile.cupColor as CupColor);
             player.score += score;
         }
 
@@ -123,7 +137,7 @@ export class GameRoom extends Room {
         this.state.discardPile.push(card);
     }
 
-    handleEndTurn(client) {
+    handleEndTurn(client: Client): void {
         if (client.sessionId !== this.state.currentPlayer) return;
 
         const player = this.state.players.get(client.sessionId);
@@ -133,11 +147,17 @@ export class GameRoom extends Room {
         player.hasDrawnAssist = false;
         player.hasDrawnNumber = false;
 
-        // Move to next player
-        const players = Array.from(this.state.players.keys());
-        const currentIndex = players.indexOf(this.state.currentPlayer);
-        this.state.currentPlayer = players[(currentIndex + 1) % players.length];
+        // Get next player from turn order
+        const nextPlayer = this.state.getNextPlayer();
+        this.state.currentPlayer = nextPlayer;
         this.state.turnState = 'assist_phase';
+
+        // Broadcast turn change
+        this.broadcast("turnChanged", {
+            previousPlayer: client.sessionId,
+            currentPlayer: nextPlayer,
+            turnNumber: this.state.currentTurn
+        });
 
         // Check if game has ended
         const allTilesOccupied = this.state.tiles.every((tile, index) => 
@@ -151,7 +171,8 @@ export class GameRoom extends Room {
                 scores: Object.fromEntries(
                     Array.from(this.state.players.entries())
                         .map(([id, p]) => [id, p.score])
-                )
+                ),
+                finalTurnOrder: Array.from(this.state.turnOrder)
             });
         }
     }
