@@ -246,11 +246,34 @@ export class SocketManager {
     }
 
     public exitRoom(): void {
-        if (!this.socket || this.isDestroyed || this.cleanupStarted || !this.isInitialized) return;
+        if (!this.socket || this.isDestroyed || this.cleanupStarted || !this.isInitialized) {
+            console.warn('Cannot exit room: Socket not in valid state');
+            return;
+        }
+        
         try {
-            this.socket.leave();
+            // Store socket reference before cleanup
+            const socket = this.socket;
+            
+            // First notify other players we're leaving
+            socket.send('playerLeaving');
+            
+            // Mark as destroyed to prevent further operations
+            this.isDestroyed = true;
+            
+            // Leave the room before cleanup
+            socket.leave();
+            
+            // Finally cleanup everything else
+            this.cleanup();
+            
+            console.log('Successfully exited room');
         } catch (error) {
-            console.warn('Error leaving room:', error);
+            console.error('Error exiting room:', error);
+            // Even if there's an error, we should mark as destroyed
+            this.isDestroyed = true;
+            // Still try to cleanup
+            this.cleanup();
         }
     }
 
