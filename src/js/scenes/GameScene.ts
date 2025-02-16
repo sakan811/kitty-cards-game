@@ -196,6 +196,18 @@ export default class GameScene extends Scene implements Partial<IGameScene> {
             // Create the game scene elements
             this.editorCreate();
 
+            // Set up game listeners
+            this.setupGameListeners();
+
+            // Add window beforeunload listener
+            window.addEventListener('beforeunload', (e) => {
+                if (this.socket && !this.isDestroyed) {
+                    e.preventDefault();
+                    e.returnValue = 'Are you sure you want to leave? The game will end.';
+                    // If they proceed with leaving, the socket cleanup will happen in shutdown
+                }
+            });
+
             // Initialize UI after scene creation
             if (this.socket && (this.socket as any).hasJoined) {
                 try {
@@ -220,11 +232,21 @@ export default class GameScene extends Scene implements Partial<IGameScene> {
 
     shutdown(): void {
         if (this.isInitialized) {
+            // Remove the beforeunload listener
+            window.removeEventListener('beforeunload', () => {});
+
             if (this.socketManager) {
                 this.socketManager.cleanup();
             }
             if (this.boardManager) {
                 this.boardManager.cleanup();
+            }
+            if (this.socket && !this.isDestroyed) {
+                try {
+                    this.socketManager?.exitRoom();
+                } catch (error) {
+                    console.error('Error leaving room during shutdown:', error);
+                }
             }
             
             this.resetScene();
@@ -307,8 +329,8 @@ export default class GameScene extends Scene implements Partial<IGameScene> {
     private setupGameListeners(): void {
         this.input.on('gameobjectdown', (pointer: Phaser.Input.Pointer, gameObject: GameObjects.GameObject) => {
             if (gameObject.name === "exit_room_button" && this.socketManager) {
-                this.socketManager.exitRoom();
-                this.scene.start('LobbyScene'); // Transition back to lobby
+                console.log('Exit button clicked');
+                this.handleExitRoom();
                 return;
             }
 
@@ -329,6 +351,29 @@ export default class GameScene extends Scene implements Partial<IGameScene> {
                 this.socketManager.emitTileClick(gameObjectWithType.tileIndex);
             }
         });
+    }
+
+    private handleExitRoom(): void {
+        if (!this.socketManager || !this.socket) {
+            console.warn('Cannot exit room: Socket manager or socket not initialized');
+            return;
+        }
+
+        try {
+            // First notify the server that we're leaving
+            this.socketManager.exitRoom();
+            
+            // Clean up the current scene
+            this.isDestroyed = true;
+            
+            // Navigate back to lobby using window.location
+            window.location.href = '/';
+        } catch (error) {
+            console.error('Error exiting room:', error);
+            this.showErrorMessage('Failed to exit room properly');
+            // Still try to navigate to lobby in case of error
+            window.location.href = '/';
+        }
     }
 
     handleGameUpdate(data: { type: string; gameState: GameState }): void {
