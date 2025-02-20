@@ -64,6 +64,7 @@ export default class GameScene extends Scene implements IGameScene {
     messageText: GameObjects.Text | null = null;
     turnText: GameObjects.Text | null = null;
     boardManager: any = null;
+    isDrawing: boolean = false;
 
     constructor(boardManager?: any) {
         super({
@@ -96,6 +97,7 @@ export default class GameScene extends Scene implements IGameScene {
         this.messageText = null;
         this.turnText = null;
         this.boardManager = null;
+        this.isDrawing = false;
     }
 
     init(data?: InitData): void {
@@ -153,18 +155,21 @@ export default class GameScene extends Scene implements IGameScene {
                         });
                     } else if (type === 'error' && message) {
                         console.error('Socket error:', message);
-                        this.showErrorMessage(message.error);
+                        this.handleGameError(message.error);
                     } else if (type === 'disconnect') {
                         console.log('Disconnected from server');
-                        this.showErrorMessage('Disconnected from server');
+                        this.handleDisconnect();
                     } else if (type === 'gameEnded' && message && this.isInitialized) {
                         console.log('Game ended:', message);
-                        this.events.emit('gameError', message.reason);
+                        this.handleGameEnded(message.reason);
                     } else if (type === 'cardDrawn' && message) {
                         console.log('Card drawn:', message);
                         this.handleCardDrawn(message);
                     }
                 });
+
+                // Add error event handler
+                this.events.on('gameError', this.handleGameError, this);
             }
 
             console.log('Game properties initialized:', {
@@ -176,7 +181,11 @@ export default class GameScene extends Scene implements IGameScene {
 
             // Initialize managers in order
             try {
-                this.socketManager = new SocketManager(this, 'wss://your-game-server.com');  // Replace with actual endpoint
+                // Use the same endpoint as GameClient
+                const endpoint = process.env.NODE_ENV === 'production'
+                    ? 'wss://your-production-url.com'
+                    : `ws://${window.location.hostname}:3000`;
+                this.socketManager = new SocketManager(this, endpoint);
                 console.log('Socket Manager initialized');
 
                 this.isInitialized = true;
@@ -299,23 +308,36 @@ export default class GameScene extends Scene implements IGameScene {
     }
 
     shutdown(): void {
+        console.log('Shutting down GameScene');
+        
         if (this.isInitialized) {
-            // Remove the beforeunload listener
-            window.removeEventListener('beforeunload', () => {});
-
-            if (this.socketManager) {
-                this.socketManager.cleanup();
-            }
-            if (this.socket && !this.isDestroyed) {
-                try {
-                    this.socketManager?.exitRoom();
-                } catch (error) {
-                    console.error('Error leaving room during shutdown:', error);
-                }
-            }
+            // Set destroyed flag first to prevent new operations
+            this.isDestroyed = true;
             
-            this.resetScene();
-            console.log('Game scene cleaned up');
+            try {
+                // Remove the beforeunload listener
+                window.removeEventListener('beforeunload', () => {});
+
+                // Clean up socket manager first
+                if (this.socketManager) {
+                    this.socketManager.cleanup();
+                    this.socketManager = null;
+                }
+
+                // Clean up game objects safely
+                if (this.messageText && this.messageText.scene) {
+                    this.messageText.destroy();
+                }
+                if (this.turnText && this.turnText.scene) {
+                    this.turnText.destroy();
+                }
+
+                // Reset all state
+                this.resetScene();
+                console.log('Game scene cleaned up');
+            } catch (error) {
+                console.error('Error during scene shutdown:', error);
+            }
         }
     }
 
@@ -444,7 +466,7 @@ export default class GameScene extends Scene implements IGameScene {
     }
 
     private setupGameListeners(): void {
-        this.input.on('gameobjectdown', (pointer: Phaser.Input.Pointer, gameObject: GameObjects.GameObject) => {
+        this.input.on('gameobjectdown', (_pointer: Phaser.Input.Pointer, gameObject: GameObjects.GameObject) => {
             if (gameObject.name === "exit_room_button" && this.socketManager) {
                 console.log('Exit button clicked');
                 this.handleExitRoom();
@@ -516,267 +538,321 @@ export default class GameScene extends Scene implements IGameScene {
         }
     }
 
-    private handleCardDrawn(data: { type: 'assist' | 'number', card: any }): void {
-        const { type, card } = data;
-        
-        // Don't update state here - wait for server state update
-        console.log('Card drawn, waiting for server state update:', data);
+    private animateCardDraw(type: 'assist' | 'number', card: any): void {
+        if (this.isDrawing) return;
+        this.isDrawing = true;
 
-        // Create and display the card in hand
-        const handContainer = this.children.getByName('player-hand') as Phaser.GameObjects.Container;
-        if (!handContainer) {
-            console.error('Hand container not found');
-            return;
-        }
+        const deckPosition = type === 'assist' 
+            ? { x: 440, y: 730 } // Center position for assist deck
+            : { x: 440, y: 730 }; // Center position for number deck
 
-        // Get the source deck position
-        const sourceDeck = this.children.getByName(`${type}-deck`) as Phaser.GameObjects.Image;
-        if (!sourceDeck) {
-            console.error('Source deck not found');
-            return;
-        }
+        // Create the card sprite
+        const cardSprite = this.add.sprite(deckPosition.x, deckPosition.y, `${type}-card-back`)
+            .setScale(0.8)
+            .setDepth(100);
 
-        // Create the card sprite at the deck's position
-        const cardSprite = this.add.image(sourceDeck.x, sourceDeck.y, `${type}-card-${card.value}`);
-        cardSprite.setScale(type === 'assist' ? 0.22 : 0.16);
-        cardSprite.setDepth(100); // Ensure card appears above other elements during animation
-        
-        // Calculate final position in hand
-        const currentCards = (handContainer as any).list.length;
-        const cardWidth = cardSprite.width * cardSprite.scaleX;
-        const spacing = cardWidth + 10;
-        const totalWidth = (currentCards + 1) * spacing;
-        const startX = -totalWidth / 2;
+        // Calculate target position based on player's hand area
+        const targetX = this.playerId === this.currentTurn ? 219 : 666; // Left for current player, right for opponent
+        const targetY = 975; // Bottom of the screen
 
-        // Reposition existing cards in hand with animation
-        (handContainer as any).list.forEach((child: GameObjects.Image, index: number) => {
-            this.add.tween({
-                targets: child,
-                x: startX + (index * spacing),
-                duration: 300,
-                ease: 'Back.easeOut'
-            });
-        });
-
-        // Animate the card from deck to hand
-        this.add.tween({
+        // Animate the card draw
+        this.tweens.add({
             targets: cardSprite,
-            x: handContainer.x + startX + (currentCards * spacing),
-            y: handContainer.y,
-            duration: 500,
-            ease: 'Back.easeOut',
+            x: { value: targetX, duration: 1000, ease: 'Power2' },
+            y: { value: targetY, duration: 500, ease: 'Bounce.easeOut', delay: 150 },
             onComplete: () => {
-                // Add card to hand container and clean up
-                cardSprite.setDepth(0);
-                handContainer.add(cardSprite);
-                
-                // Add a small bounce effect
-                this.add.tween({
-                    targets: cardSprite,
-                    scaleX: cardSprite.scaleX * 1.1,
-                    scaleY: cardSprite.scaleY * 1.1,
-                    duration: 100,
-                    yoyo: true,
-                    ease: 'Quad.easeOut'
-                });
+                // If it's the current player's card, flip it to show the value
+                if (this.playerId === this.currentTurn) {
+                    this.flipCard(cardSprite, card, type);
+                }
+                this.isDrawing = false;
             }
-        });
-
-        // Add visual feedback on the deck
-        this.add.tween({
-            targets: sourceDeck,
-            scaleX: sourceDeck.scaleX * 0.9,
-            scaleY: sourceDeck.scaleY * 0.9,
-            duration: 100,
-            yoyo: true,
-            ease: 'Quad.easeOut'
         });
     }
 
+    private flipCard(cardSprite: Phaser.GameObjects.Sprite, card: any, type: 'assist' | 'number'): void {
+        // Flip animation
+        this.tweens.add({
+            targets: cardSprite,
+            scaleX: 0,
+            duration: 300,
+            ease: 'Linear',
+            onComplete: () => {
+                // Change the texture to the front of the card
+                const cardTexture = this.createCardTexture(card, type);
+                cardSprite.setTexture(cardTexture);
+                
+                // Flip back
+                this.tweens.add({
+                    targets: cardSprite,
+                    scaleX: 0.8,
+                    duration: 300,
+                    ease: 'Linear'
+                });
+            }
+        });
+    }
+
+    private createCardTexture(card: any, type: 'assist' | 'number'): string {
+        // This should return the appropriate texture key for the card
+        // You'll need to load these textures in preload()
+        if (type === 'assist') {
+            return `assist-card-${card.id}`; // Replace with actual texture key format
+        } else {
+            return `number-card-${card.value}`; // Replace with actual texture key format
+        }
+    }
+
+    private handleCardDrawn(data: { type: 'assist' | 'number', card: any }): void {
+        const { type, card } = data;
+        
+        // Update game state
+        if (this.playerId === this.currentTurn) {
+            if (type === 'assist') {
+                this.hasDrawnAssist = true;
+            } else {
+                this.hasDrawnNumber = true;
+            }
+        }
+
+        // Animate the card draw
+        this.animateCardDraw(type, card);
+
+        // Update UI state
+        this.updateDeckInteractivity();
+        this.updateTurnIndicator();
+    }
+
     private setupCardDeck(type: 'assist' | 'number', x: number, y: number, scale: number): void {
+        if (this.isDestroyed) return;
+
         const deck = this.add.image(x, y, `${type}-card-back`);
-        deck.setScale(scale);
         deck.setName(`${type}-deck`)
+            .setScale(scale)
             .setInteractive({ useHandCursor: true })
+            .on('pointerover', () => {
+                if (!this.isDestroyed && this.isPlayerTurn && this.canDrawCard(type)) {
+                    deck.setTint(0xcccccc);
+                }
+            })
+            .on('pointerout', () => !this.isDestroyed && deck.clearTint())
             .on('pointerdown', async () => {
-                // Basic validation first
-                if (!this.canDrawCard(type)) {
-                    const message = type === 'assist' 
-                        ? "Already drawn an assist card!"
-                        : !this.hasDrawnAssist 
-                            ? "Draw assist card first!"
-                            : "Already drawn a number card!";
-                    this.showErrorMessage(message);
+                // Prevent actions if scene is being destroyed
+                if (this.isDestroyed) return;
+
+                // Prevent multiple simultaneous draws
+                if (this.isDrawing) {
+                    console.log('Card draw already in progress');
                     return;
                 }
 
-                // Disable deck interaction while processing
+                // Basic validation
+                if (!this.isPlayerTurn) {
+                    this.showErrorMessage('Not your turn');
+                    return;
+                }
+
+                if (!this.canDrawCard(type)) {
+                    const reason = type === 'assist' 
+                        ? 'You have already drawn an assist card'
+                        : !this.hasDrawnAssist 
+                            ? 'Draw an assist card first'
+                            : 'You have already drawn a number card';
+                    this.showErrorMessage(reason);
+                    return;
+                }
+
+                // Disable deck interaction during draw
                 deck.disableInteractive();
-                deck.setTint(0x666666);
+                deck.setTint(0x999999);
+                this.isDrawing = true;
 
                 try {
-                    // Create temporary card immediately for better UX
-                    const tempCard = {
-                        type,
-                        value: type === 'assist' ? 'temp' : '?',
-                        color: type === 'number' ? 'temp' : undefined
-                    };
+                    // Create loading animation
+                    const loadingText = this.add.text(deck.x, deck.y + 50, 'Drawing...', {
+                        fontSize: '16px',
+                        color: '#ffffff'
+                    }).setOrigin(0.5);
 
-                    // Show temporary card animation
-                    await this.showCardDrawAnimation(type, tempCard, deck);
-
-                    // Update local state
-                    if (type === 'assist') {
-                        this.hasDrawnAssist = true;
-                    } else {
-                        this.hasDrawnNumber = true;
+                    // Try to draw card from server first
+                    if (!this.socketManager) {
+                        throw new Error('Socket manager not initialized');
                     }
 
-                    // Try to notify server about the draw, but don't wait for response
-                    if (this.socketManager) {
-                        this.socketManager.drawCard(type).catch(error => {
-                            console.warn('Failed to notify server about card draw:', error);
-                        });
+                    // Wait for server response before showing animation
+                    await this.socketManager.drawCard(type);
+
+                    // Only proceed with updates if scene is still active
+                    if (!this.isDestroyed) {
+                        // Remove loading text safely
+                        if (loadingText && loadingText.scene) {
+                            loadingText.destroy();
+                        }
+
+                        // Server confirmed the draw, now we can update local state
+                        if (type === 'assist') {
+                            this.hasDrawnAssist = true;
+                        } else {
+                            this.hasDrawnNumber = true;
+                        }
+
+                        // Update UI to reflect new state
+                        this.updateTurnIndicator();
+                        this.updateDeckInteractivity();
                     }
 
                 } catch (error) {
                     console.error(`Error in card draw process:`, error);
-                    this.showErrorMessage(error instanceof Error ? error.message : "Failed to draw card");
-                } finally {
-                    // Cleanup
-                    deck.clearTint();
-                    deck.setInteractive({ useHandCursor: true });
-                }
-            });
-
-        // Add hover effects
-        deck.on('pointerover', () => {
-            if (this.canDrawCard(type)) {
-                deck.setTint(0xaaaaaa);
-                this.add.tween({
-                    targets: deck,
-                    scaleX: scale * 1.05,
-                    scaleY: scale * 1.05,
-                    duration: 100,
-                    ease: 'Quad.easeOut'
-                });
-            }
-        }).on('pointerout', () => {
-            deck.clearTint();
-            this.add.tween({
-                targets: deck,
-                scaleX: scale,
-                scaleY: scale,
-                duration: 100,
-                ease: 'Quad.easeOut'
-            });
-        });
-    }
-
-    private async showCardDrawAnimation(type: 'assist' | 'number', card: any, sourceDeck: Phaser.GameObjects.Image): Promise<void> {
-        const handContainer = this.children.getByName('player-hand') as Phaser.GameObjects.Container;
-        if (!handContainer) {
-            throw new Error('Hand container not found');
-        }
-
-        // Create the card sprite at the deck's position
-        const cardSprite = this.add.image(sourceDeck.x, sourceDeck.y, `${type}-card-back`);
-        cardSprite.setScale(type === 'assist' ? 0.22 : 0.16);
-        cardSprite.setDepth(100);
-
-        // Calculate final position in hand
-        const currentCards = (handContainer as any).list.length;
-        const cardWidth = cardSprite.width * cardSprite.scaleX;
-        const spacing = cardWidth + 10;
-        const totalWidth = (currentCards + 1) * spacing;
-        const startX = -totalWidth / 2;
-
-        // Reposition existing cards
-        (handContainer as any).list.forEach((child: GameObjects.Image, index: number) => {
-            this.add.tween({
-                targets: child,
-                x: startX + (index * spacing),
-                duration: 300,
-                ease: 'Back.easeOut'
-            });
-        });
-
-        // Animate card to hand
-        return new Promise((resolve) => {
-            this.add.tween({
-                targets: cardSprite,
-                x: handContainer.x + startX + (currentCards * spacing),
-                y: handContainer.y,
-                duration: 500,
-                ease: 'Back.easeOut',
-                onComplete: () => {
-                    cardSprite.setDepth(0);
-                    handContainer.add(cardSprite);
                     
-                    // Add bounce effect
-                    this.add.tween({
-                        targets: cardSprite,
-                        scaleX: cardSprite.scaleX * 1.1,
-                        scaleY: cardSprite.scaleY * 1.1,
-                        duration: 100,
-                        yoyo: true,
-                        ease: 'Quad.easeOut',
-                        onComplete: () => {
-                            resolve();
+                    // Only show error if scene is still active
+                    if (!this.isDestroyed) {
+                        // Show error message
+                        this.showErrorMessage(error instanceof Error ? error.message : "Failed to draw card");
+                        
+                        // Rollback any local state changes
+                        if (type === 'assist') {
+                            this.hasDrawnAssist = false;
+                        } else {
+                            this.hasDrawnNumber = false;
                         }
-                    });
+                        
+                        // Update UI after rollback
+                        this.updateTurnIndicator();
+                        this.updateDeckInteractivity();
+                    }
+
+                } finally {
+                    // Cleanup only if scene is still active
+                    if (!this.isDestroyed) {
+                        deck.clearTint();
+                        if (this.isPlayerTurn && this.canDrawCard(type)) {
+                            deck.setInteractive({ useHandCursor: true });
+                        }
+                    }
+                    this.isDrawing = false;
                 }
             });
-
-            // Add deck feedback
-            this.add.tween({
-                targets: sourceDeck,
-                scaleX: sourceDeck.scaleX * 0.9,
-                scaleY: sourceDeck.scaleY * 0.9,
-                duration: 100,
-                yoyo: true,
-                ease: 'Quad.easeOut'
-            });
-        });
     }
 
     private canDrawCard(type: 'assist' | 'number'): boolean {
-        if (!this.isPlayerTurn) return false;
-        if (type === 'assist') return !this.hasDrawnAssist;
+        if (type === 'assist') {
+            return !this.hasDrawnAssist;
+        }
         return this.hasDrawnAssist && !this.hasDrawnNumber;
     }
 
-    showMessage(message: string, duration: number = 2000): void {
-        if (!this.messageText) {
-            this.messageText = this.add.text(
-                this.game.config.width as number / 2,
-                80,
-                '',
-                {
-                    fontSize: '24px',
-                    color: '#ffffff',
-                    backgroundColor: '#00000080',
-                    padding: { x: 10, y: 5 }
-                }
-            )
-            .setOrigin(0.5)
-            .setDepth(100)
-            .setVisible(false);
-        }
+    private updateTurnIndicator(): void {
+        // Don't update if scene is being destroyed
+        if (this.isDestroyed) return;
 
-        this.messageText.setText(message);
-        this.messageText.setVisible(true);
-        this.messageText.setAlpha(1);
-
-        this.time.delayedCall(duration, () => {
-            if (this.messageText) {
-                this.messageText.setAlpha(0);
-                this.messageText.setVisible(false);
+        try {
+            if (this.turnText && this.turnText.scene) {
+                this.turnText.setText(this.isPlayerTurn ? 'Your Turn!' : "Opponent's Turn");
+                this.turnText.setColor(this.isPlayerTurn ? '#4ADE80' : '#FB7185');
             }
-        });
+        } catch (error) {
+            console.warn('Error updating turn indicator:', error);
+        }
     }
 
-    showErrorMessage(message: string): void {
-        this.showMessage(message, 3000);
+    private updateDeckInteractivity(): void {
+        if (this.socketManager) {
+            this.socketManager.updateDeckInteractivity();
+        }
+    }
+
+    showMessage(message: string, duration: number = 2000): void {
+        // Don't show messages if scene is being destroyed
+        if (this.isDestroyed) return;
+
+        try {
+            if (!this.messageText || !this.messageText.scene) {
+                this.messageText = this.add.text(
+                    this.game.config.width as number / 2,
+                    80,
+                    '',
+                    {
+                        fontSize: '24px',
+                        color: '#ffffff',
+                        backgroundColor: '#00000080',
+                        padding: { x: 10, y: 5 }
+                    }
+                )
+                .setOrigin(0.5)
+                .setDepth(100)
+                .setVisible(false);
+            }
+
+            this.messageText.setText(message);
+            this.messageText.setVisible(true);
+            this.messageText.setAlpha(1);
+
+            // Only set timeout if scene is still active
+            if (!this.isDestroyed) {
+                this.time.delayedCall(duration, () => {
+                    if (this.messageText && this.messageText.scene && !this.isDestroyed) {
+                        this.messageText.setAlpha(0);
+                        this.messageText.setVisible(false);
+                    }
+                });
+            }
+        } catch (error) {
+            console.warn('Error showing message:', error);
+        }
+    }
+
+    public showErrorMessage(message: string): void {
+        if (this.isDestroyed) return;
+        
+        try {
+            // Only show error if scene is still active
+            if (this.scene && this.scene.isActive()) {
+                this.showMessage(message, 3000);
+            }
+        } catch (error) {
+            console.warn('Failed to show error message:', error);
+        }
+    }
+
+    private handleGameError(error: string): void {
+        console.error('Game error:', error);
+        this.showErrorMessage(error);
+        
+        // Check if error is related to room not found or connection issues
+        if (error.includes('room no longer exists') || error.includes('Failed to reconnect')) {
+            this.scene.start('LobbyScene', { 
+                error: 'Game session ended. Please start a new game.' 
+            });
+        }
+    }
+
+    private handleDisconnect(): void {
+        if (this.isDestroyed) return;
+        
+        console.log('Handling disconnect');
+        this.showErrorMessage('Attempting to reconnect...');
+        
+        // Add a timeout to redirect to lobby if reconnection takes too long
+        setTimeout(() => {
+            if (!this.isDestroyed && (!this.socket?.connection?.isOpen || !this.socket?.sessionId)) {
+                this.isDestroyed = true;
+                this.scene.start('LobbyScene', {
+                    error: 'Connection lost. Please start a new game.',
+                    forceReconnect: true
+                });
+            }
+        }, 10000); // 10 seconds timeout
+    }
+
+    private handleGameEnded(reason: string): void {
+        console.log('Game ended:', reason);
+        this.events.emit('gameError', reason);
+        
+        // Clean up and return to lobby
+        setTimeout(() => {
+            this.scene.start('LobbyScene', {
+                message: 'Game ended: ' + reason
+            });
+        }, 2000);
     }
 } 
