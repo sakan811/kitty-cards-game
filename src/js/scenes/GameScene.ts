@@ -1,7 +1,7 @@
-import { Room, Client } from 'colyseus';
+import { Scene, GameObjects } from 'phaser';
+import type { Room } from 'colyseus.js';
 import { SocketManager } from '../managers/SocketManager';
 import { BoardManager } from '../managers/BoardManager';
-import { Scene, GameObjects } from 'phaser';
 import type { GameScene as IGameScene, GameState as IGameState } from '../types/game';
 
 interface CupPosition {
@@ -13,31 +13,42 @@ interface GameState extends IGameState {
     tiles: Array<{
         cupColor?: string;
         tileIndex?: number;
+        hasNumber?: boolean;
+        number?: number;
+    }>;
+    currentPlayer: string;
+    players: Map<string, {
+        id: string;
+        ready: boolean;
+        hasDrawnAssist: boolean;
+        hasDrawnNumber: boolean;
+        score: number;
+        hand: Array<any>;
     }>;
 }
 
 interface InitData {
-    room: Room<GameState>;  // Simplified Room type
+    room: Room;
     roomCode: string;
     playerId: string;
     currentTurn: string;
     gameState: GameState;
 }
 
-export default class GameScene extends Scene implements Partial<IGameScene> {
+export default class GameScene extends Scene implements IGameScene {
     socket: Room | null = null;
-    private roomCode: string | null = null;
-    private players: Record<string, any> | null = null;
-    private currentTurn: string | null = null;
+    roomCode: string | null = null;
+    players: Map<string, any> | null = null;
+    currentTurn: string | null = null;
     isPlayerTurn: boolean = false;
     playerId: string = '';
-    currentPhase: string = 'assist_phase';  // Set default phase
+    currentPhase: string = 'assist_phase';
     hasDrawnAssist: boolean = false;
     hasDrawnNumber: boolean = false;
     isDestroyed: boolean = false;
     turnManager: any = null;
-    isInitialized: boolean = false;  // Make this public
-    private cupPositions: CupPosition[] = [
+    isInitialized: boolean = false;
+    cupPositions: CupPosition[] = [
         { x: 219, y: 975 }, // bottom left (0)
         { x: 445, y: 979 }, // bottom middle (1)
         { x: 666, y: 981 }, // bottom right (2)
@@ -48,12 +59,12 @@ export default class GameScene extends Scene implements Partial<IGameScene> {
         { x: 666, y: 507 }, // top right (7)
         { x: 440, y: 730 }  // center (8)
     ];
-    private boardManager: BoardManager | null = null;
-    private socketManager: SocketManager | null = null;
-    private gameState: GameState | null = null;
-    private initData: InitData | null = null;
-    private messageText: GameObjects.Text | null = null;
-    private turnText: GameObjects.Text | null = null;
+    boardManager: BoardManager | null = null;
+    socketManager: SocketManager | null = null;
+    gameState: GameState | null = null;
+    initData: InitData | null = null;
+    messageText: GameObjects.Text | null = null;
+    turnText: GameObjects.Text | null = null;
 
     constructor() {
         super({
@@ -125,6 +136,31 @@ export default class GameScene extends Scene implements Partial<IGameScene> {
             this.hasDrawnNumber = false;
             this.gameState = data.gameState;
 
+            // Set up message handlers
+            if (this.socket) {
+                // @ts-ignore: Colyseus type definitions need to be updated
+                this.socket.onMessage("*", (type: string | number, message: any) => {
+                    if (this.isDestroyed) return;
+                    
+                    if (type === 'gameState' && message) {
+                        console.log('Game state update received:', message);
+                        this.handleGameUpdate({
+                            type: 'gameState',
+                            gameState: message
+                        });
+                    } else if (type === 'error' && message) {
+                        console.error('Socket error:', message);
+                        this.showErrorMessage(message.error);
+                    } else if (type === 'disconnect') {
+                        console.log('Disconnected from server');
+                        this.showErrorMessage('Disconnected from server');
+                    } else if (type === 'gameEnded' && message && this.isInitialized) {
+                        console.log('Game ended:', message);
+                        this.events.emit('gameError', message.reason);
+                    }
+                });
+            }
+
             console.log('Game properties initialized:', {
                 roomCode: this.roomCode,
                 playerId: this.playerId,
@@ -140,16 +176,6 @@ export default class GameScene extends Scene implements Partial<IGameScene> {
                 
                 this.socketManager = new SocketManager(this);
                 console.log('Socket Manager initialized');
-
-                // Set up socket message handler
-                if (this.socket) {
-                    this.socket.onMessage('*', (client: Client<any, any>, type: string | number, message: any) => {
-                        if (type === 'gameEnded' && this.isInitialized) {
-                            console.log('Game ended:', message);
-                            this.events.emit('gameError', message.reason);
-                        }
-                    });
-                }
 
                 this.isInitialized = true;
                 console.log('Game scene fully initialized with state:', this.gameState);
@@ -321,17 +347,48 @@ export default class GameScene extends Scene implements Partial<IGameScene> {
         const end_turn_button = this.add.rectangle(723, 1481, 128, 48, 0x4B5563); // Gray-600 color
         end_turn_button.name = "end_turn_button";
         end_turn_button.setScale(1.54, 0.85);
-        end_turn_button.setInteractive({ useHandCursor: true })
-            .on('pointerover', () => {
-                if (this.isPlayerTurn && this.hasDrawnAssist && this.hasDrawnNumber) {
-                    end_turn_button.setFillStyle(0x374151); // Gray-700 for hover
-                    end_turn_button.setScale(1.6, 0.9); // Scale up slightly
-                }
-            })
-            .on('pointerout', () => {
+
+        // Update button state based on turn conditions
+        const updateEndTurnButtonState = () => {
+            const canEndTurn = this.isPlayerTurn && this.hasDrawnAssist && this.hasDrawnNumber;
+            end_turn_button.setFillStyle(canEndTurn ? 0x4B5563 : 0x374151); // Gray-600 if active, Gray-700 if disabled
+            end_turn_button.setAlpha(canEndTurn ? 1 : 0.5);
+            
+            // Remove previous interaction if exists
+            end_turn_button.removeInteractive();
+            
+            if (canEndTurn) {
+                end_turn_button.setInteractive({ useHandCursor: true });
+            }
+        };
+
+        // Initial state
+        updateEndTurnButtonState();
+
+        // Add button interactions
+        end_turn_button.on('pointerover', () => {
+            if (this.isPlayerTurn && this.hasDrawnAssist && this.hasDrawnNumber) {
+                end_turn_button.setFillStyle(0x374151); // Gray-700 for hover
+                end_turn_button.setScale(1.6, 0.9); // Scale up slightly
+            }
+        })
+        .on('pointerout', () => {
+            if (this.isPlayerTurn && this.hasDrawnAssist && this.hasDrawnNumber) {
                 end_turn_button.setFillStyle(0x4B5563); // Back to Gray-600
                 end_turn_button.setScale(1.54, 0.85);
-            });
+            }
+        })
+        .on('pointerdown', () => {
+            if (this.isPlayerTurn && this.hasDrawnAssist && this.hasDrawnNumber && this.socketManager) {
+                console.log('End turn button clicked');
+                this.socketManager.endTurn();
+                // Reset player's draw states
+                this.hasDrawnAssist = false;
+                this.hasDrawnNumber = false;
+                // Update button state
+                updateEndTurnButtonState();
+            }
+        });
 
         // Add text to end turn button
         const endTurnText = this.add.text(723, 1481, 'End Turn', {
@@ -339,6 +396,9 @@ export default class GameScene extends Scene implements Partial<IGameScene> {
             fontSize: '18px',
             color: '#ffffff'
         }).setOrigin(0.5);
+
+        // Update button state when turn state changes
+        this.events.on('turnStateChanged', updateEndTurnButtonState);
 
         this.events.emit("scene-awake");
     }
@@ -348,13 +408,6 @@ export default class GameScene extends Scene implements Partial<IGameScene> {
             if (gameObject.name === "exit_room_button" && this.socketManager) {
                 console.log('Exit button clicked');
                 this.handleExitRoom();
-                return;
-            }
-
-            if (gameObject.name === "end_turn_button" && this.socketManager) {
-                if (this.isPlayerTurn && this.hasDrawnAssist && this.hasDrawnNumber) {
-                    this.socketManager.endTurn();
-                }
                 return;
             }
 
@@ -410,6 +463,9 @@ export default class GameScene extends Scene implements Partial<IGameScene> {
             }
 
             this.gameState = state;
+            
+            // Emit turn state changed event to update button
+            this.events.emit('turnStateChanged');
             
             if (this.boardManager) {
                 this.boardManager.updateGameState(state);
