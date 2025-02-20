@@ -1,6 +1,10 @@
 import { Room, Client } from "@colyseus/core";
 import { GameState, Player, Card, Tile, CupColor } from "../models/GameState";
 
+interface DrawCardMessage {
+    type: 'assist' | 'number';
+}
+
 export class GameRoom extends Room<GameState> {
     maxClients = 2;
 
@@ -12,7 +16,7 @@ export class GameRoom extends Room<GameState> {
 
         // Register message handlers
         this.onMessage("ready", (client, message) => this.handlePlayerReady(client, message));
-        this.onMessage("drawCard", (client, message) => this.handleDrawCard(client, message));
+        this.onMessage("drawCard", (client, message: DrawCardMessage) => this.handleDrawCard(client, message));
         this.onMessage("playCard", (client, message) => this.handlePlayCard(client, message));
         this.onMessage("endTurn", (client) => this.handleEndTurn(client));
     }
@@ -84,27 +88,122 @@ export class GameRoom extends Room<GameState> {
         });
     }
 
-    handleDrawCard(client: Client, message: { cardType: 'assist' | 'number' }): void {
-        if (client.sessionId !== this.state.currentPlayer) return;
-
-        const player = this.state.players.get(client.sessionId);
-        if (!player) return;
-
-        const { cardType } = message;
-        let card: Card | undefined;
-
-        if (cardType === 'assist' && !player.hasDrawnAssist) {
-            card = this.state.assistDeck.shift();
-            if (card) {
-                player.hasDrawnAssist = true;
-                player.hand.push(card);
+    handleDrawCard(client: Client, message: DrawCardMessage): void {
+        try {
+            // Validate client connection and session
+            if (!client.sessionId || !this.state.players.has(client.sessionId)) {
+                client.send("drawRejected", { error: "Invalid client connection" });
+                return;
             }
-        } else if (cardType === 'number' && player.hasDrawnAssist && !player.hasDrawnNumber) {
-            card = this.state.numberDeck.shift();
-            if (card) {
-                player.hasDrawnNumber = true;
-                player.hand.push(card);
+
+            // Basic turn validation
+            if (client.sessionId !== this.state.currentPlayer) {
+                client.send("drawRejected", { error: "Not your turn" });
+                return;
             }
+
+            const player = this.state.players.get(client.sessionId);
+            if (!player) {
+                client.send("drawRejected", { error: "Player not found" });
+                return;
+            }
+
+            const { type } = message;
+
+            // Validate draw phase and conditions
+            if (type === 'assist') {
+                if (player.hasDrawnAssist) {
+                    client.send("drawRejected", { error: "Already drawn assist card" });
+                    return;
+                }
+                if (this.state.assistDeck.length === 0) {
+                    client.send("drawRejected", { error: "Assist deck is empty" });
+                    return;
+                }
+            } else if (type === 'number') {
+                if (!player.hasDrawnAssist) {
+                    client.send("drawRejected", { error: "Must draw assist card first" });
+                    return;
+                }
+                if (player.hasDrawnNumber) {
+                    client.send("drawRejected", { error: "Already drawn number card" });
+                    return;
+                }
+                if (this.state.numberDeck.length === 0) {
+                    client.send("drawRejected", { error: "Number deck is empty" });
+                    return;
+                }
+            }
+
+            // Draw card and update state atomically
+            try {
+                let card: Card | undefined;
+                
+                // Get the top card from appropriate deck
+                if (type === 'assist') {
+                    card = this.state.assistDeck[0]; // Peek at top card without removing
+                    if (card) {
+                        // Update player state first
+                        player.hasDrawnAssist = true;
+                        player.hand.push(card);
+                        // Then remove from deck
+                        this.state.assistDeck.shift();
+                    }
+                } else if (type === 'number') {
+                    card = this.state.numberDeck[0]; // Peek at top card without removing
+                    if (card) {
+                        // Update player state first
+                        player.hasDrawnNumber = true;
+                        player.hand.push(card);
+                        // Then remove from deck
+                        this.state.numberDeck.shift();
+                    }
+                }
+
+                if (!card) {
+                    client.send("drawRejected", { error: `Failed to draw ${type} card` });
+                    return;
+                }
+
+                // Update player state
+                this.state.players.set(client.sessionId, player);
+
+                // Send success response to drawing player
+                client.send("drawValidated", {
+                    type,
+                    card,
+                    deckCount: type === 'assist' ? this.state.assistDeck.length : this.state.numberDeck.length
+                });
+
+                // Notify other players about the draw (without card details)
+                this.broadcast("playerDrewCard", {
+                    playerId: client.sessionId,
+                    type,
+                    deckCount: type === 'assist' ? this.state.assistDeck.length : this.state.numberDeck.length
+                }, { except: client });
+
+                // Broadcast updated game state
+                this.broadcast("gameState", this.state);
+
+            } catch (error) {
+                console.error('Error processing card draw:', error);
+                client.send("drawRejected", { error: "Failed to process card draw" });
+                
+                // Attempt to rollback any partial state changes
+                if (player.hasDrawnAssist && type === 'assist') {
+                    player.hasDrawnAssist = false;
+                    const card = player.hand.pop();
+                    if (card) this.state.assistDeck.unshift(card);
+                } else if (player.hasDrawnNumber && type === 'number') {
+                    player.hasDrawnNumber = false;
+                    const card = player.hand.pop();
+                    if (card) this.state.numberDeck.unshift(card);
+                }
+            }
+
+        } catch (error) {
+            console.error('Error in handleDrawCard:', error);
+            client.send("drawRejected", { error: "Internal server error during card draw" });
         }
     }
 
