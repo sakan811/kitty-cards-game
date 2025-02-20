@@ -1,56 +1,51 @@
-// @ts-ignore
-import { Client, Room } from 'colyseus.js';
+import { io, Socket } from 'socket.io-client';
 
-interface GameClientOptions {
+export interface GameClientOptions {
     serverUrl?: string;
     maxReconnectAttempts?: number;
     connectionTimeout?: number;
     retryDelay?: number;
 }
 
-type ConnectionState = 'connecting' | 'connected' | 'disconnected';
-
-// Extend the Colyseus Client type to include connection property
-interface ExtendedClient extends Client {
-    connection: WebSocket & {
-        isOpen: boolean;
-        close: () => void;
-    };
-    onStateChange: (callback: (state: ConnectionState) => void) => void;
-    onError: (callback: (error: Error) => void) => void;
-    joinOrCreate: (roomName: string, options?: any) => Promise<Room>;
-    joinById: (roomId: string) => Promise<Room>;
-    getAvailableRooms: (roomName: string) => Promise<Room[]>;
+export interface RoomListing {
+    roomId: string;
+    players: number;
 }
 
-interface RoomState {
-    players: Map<string, any>;
-    gameStarted: boolean;
-    hostId?: string;
+export interface Player {
+    id: string;
+    ready: boolean;
+    hasDrawnAssist: boolean;
+    hasDrawnNumber: boolean;
+    score: number;
+    hand: any[];
+}
+
+export interface GameState {
+    players: Map<string, Player>;
+    currentPlayer: string;
+    isGameStarted: boolean;
 }
 
 export class GameClient {
-    private client: ExtendedClient | null;
-    private room: Room | null;
-    private listeners: Map<string, Set<Function>>;
+    private socket: Socket | null;
     private isConnected: boolean;
     private reconnectAttempts: number;
     private readonly maxReconnectAttempts: number;
     private readonly connectionTimeout: number;
     private readonly retryDelay: number;
     private isConnecting: boolean;
-    private connectionPromise: Promise<ExtendedClient> | null;
+    private connectionPromise: Promise<void> | null;
     private readonly serverUrl: string;
+    private currentRoom: string | null;
 
     constructor(options: GameClientOptions = {}) {
         this.serverUrl = options.serverUrl || (
             process.env.NODE_ENV === 'production'
-                ? 'wss://your-production-url.com'
-                : `ws://${window.location.hostname}:3000`
+                ? process.env.VITE_GAME_SERVER_URL || 'http://localhost:3000'
+                : `http://${window.location.hostname}:3000`
         );
-        this.client = null;
-        this.room = null;
-        this.listeners = new Map();
+        this.socket = null;
         this.isConnected = false;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = options.maxReconnectAttempts || 5;
@@ -58,326 +53,175 @@ export class GameClient {
         this.retryDelay = options.retryDelay || 2000;
         this.isConnecting = false;
         this.connectionPromise = null;
+        this.currentRoom = null;
     }
 
-    async checkServerStatus(endpoint: string): Promise<boolean> {
-        try {
-            const wsUrl = new URL(endpoint);
-            const ws = new WebSocket(wsUrl);
-            
-            return new Promise<boolean>((resolve) => {
-                const timeout = setTimeout(() => {
-                    ws.close();
-                    this.checkHttpHealth(endpoint)
-                        .then(resolve)
-                        .catch(() => resolve(false));
-                }, 2000);
-
-                ws.onopen = () => {
-                    clearTimeout(timeout);
-                    ws.close();
-                    resolve(true);
-                };
-
-                ws.onerror = () => {
-                    clearTimeout(timeout);
-                    ws.close();
-                    this.checkHttpHealth(endpoint)
-                        .then(resolve)
-                        .catch(() => resolve(false));
-                };
-            });
-        } catch (error) {
-            console.error('Server check failed:', error);
-            return false;
+    public async connect(): Promise<void> {
+        if (this.isConnected) {
+            return;
         }
-    }
 
-    private async checkHttpHealth(endpoint: string): Promise<boolean> {
-        try {
-            const url = new URL(endpoint.replace('ws://', 'http://'));
-            const response = await fetch(`${url.origin}/health`, {
-                signal: AbortSignal.timeout(3000)
-            });
-            return response.ok;
-        } catch (error) {
-            console.error('Health check failed:', error);
-            return false;
+        if (this.isConnecting && this.connectionPromise) {
+            return this.connectionPromise;
         }
-    }
 
-    async connect(): Promise<ExtendedClient> {
-        try {
-            console.log('Attempting to connect to:', this.serverUrl);
-            
-            // If already connected, return existing client
-            if (this.isConnected && this.client?.connection?.isOpen) {
-                console.log('Already connected, reusing existing client');
-                return this.client;
+        this.isConnecting = true;
+        this.socket = io(this.serverUrl, {
+            reconnection: true,
+            reconnectionAttempts: this.maxReconnectAttempts,
+            reconnectionDelay: this.retryDelay,
+            timeout: this.connectionTimeout
+        });
+
+        this.connectionPromise = new Promise((resolve, reject) => {
+            if (!this.socket) {
+                this.isConnecting = false;
+                reject(new Error('Socket not initialized'));
+                return;
             }
 
-            // If already connecting, return existing promise
-            if (this.isConnecting && this.connectionPromise) {
-                console.log('Connection already in progress');
-                return this.connectionPromise;
-            }
+            const timeout = setTimeout(() => {
+                this.isConnecting = false;
+                reject(new Error('Connection timeout'));
+            }, this.connectionTimeout);
 
-            this.isConnecting = true;
-            console.log('Starting new connection attempt');
+            this.socket.once('connect', () => {
+                clearTimeout(timeout);
+                this.isConnected = true;
+                this.isConnecting = false;
+                this.reconnectAttempts = 0;
+                resolve();
+            });
 
-            // Create new connection promise
-            this.connectionPromise = new Promise<ExtendedClient>((resolve, reject) => {
-                let timeoutId: NodeJS.Timeout | undefined;
-                
-                const cleanup = () => {
-                    if (timeoutId) {
-                        clearTimeout(timeoutId);
-                    }
-                };
+            this.socket.once('connect_error', (error) => {
+                clearTimeout(timeout);
+                this.isConnecting = false;
+                reject(error);
+            });
+        });
 
-                try {
-                    // Always create a new client instance when connecting
-                    console.log('Creating new Colyseus client');
-                    this.client = new Client(this.serverUrl) as ExtendedClient;
+        return this.connectionPromise;
+    }
 
-                    timeoutId = setTimeout(() => {
-                        console.log('Connection timeout reached');
-                        if (this.client?.connection) {
-                            this.client.connection.close();
+    public async joinOrCreate(roomName: string = 'game_room'): Promise<any> {
+        if (!this.socket) {
+            throw new Error('Not connected to server');
+        }
+
+        return new Promise((resolve, reject) => {
+            this.socket!.emit('createRoom', {}, (response: any) => {
+                if (response.success) {
+                    this.currentRoom = response.roomId;
+                    resolve({
+                        id: response.roomId,
+                        sessionId: this.socket!.id,
+                        state: {
+                            players: new Map([[this.socket!.id, { id: this.socket!.id, ready: false }]])
                         }
-                        reject(new Error('Connection timeout'));
-                    }, this.connectionTimeout);
-
-                    // Test connection by checking availability
-                    this.client.getAvailableRooms('game_room')
-                        .then(() => {
-                            cleanup();
-                            this.isConnected = true;
-                            this.reconnectAttempts = 0;
-                            resolve(this.client!);
-                        })
-                        .catch((error) => {
-                            console.error('Failed to check rooms:', error);
-                            cleanup();
-                            this.handleConnectionFailure(reject);
-                        });
-
-                } catch (error) {
-                    console.error('Error during connection setup:', error);
-                    cleanup();
-                    this.handleConnectionFailure(reject);
+                    });
+                } else {
+                    reject(new Error(response.error || 'Failed to create room'));
                 }
             });
-
-            const client = await this.connectionPromise;
-            console.log('Successfully connected to server');
-            return client;
-        } catch (error) {
-            console.error('Connection failed:', error);
-            this.isConnected = false;
-            throw error;
-        } finally {
-            this.isConnecting = false;
-            this.connectionPromise = null;
-        }
+        });
     }
 
-    private handleConnectionFailure(reject: (reason?: any) => void): void {
-        this.reconnectAttempts++;
-        this.isConnected = false;
-        
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
-            console.log(`Connection attempt ${this.reconnectAttempts} failed, retrying in ${this.retryDelay/1000}s...`);
-            setTimeout(() => {
-                this.connect().catch(() => {}); // Ignore error here as it's handled in connect()
-            }, this.retryDelay);
-        } else {
-            this.client = null;
-            reject(new Error(`Connection failed after ${this.maxReconnectAttempts} attempts. Please check if the server is running.`));
-        }
-    }
-
-    async joinById(roomId: string): Promise<Room> {
-        console.log('Attempting to join room by ID:', roomId);
-        
-        if (!this.isConnected || !this.client) {
-            console.log('Not connected, attempting to connect first');
-            await this.connect();
+    public async joinById(roomId: string): Promise<any> {
+        if (!this.socket) {
+            throw new Error('Not connected to server');
         }
 
-        if (!this.client) {
-            throw new Error('Client not initialized');
-        }
-
-        try {
-            if (this.room) {
-                console.log('Leaving existing room before joining new one');
-                await this.leave();
-            }
-
-            console.log('Joining room...');
-            const room = await this.client.joinById(roomId);
-            
-            if (!room) {
-                throw new Error('Failed to join room');
-            }
-
-            this.room = room;
-            this.setupRoomListeners();
-            console.log('Successfully joined room:', room.id);
-            return room;
-        } catch (error) {
-            console.error('Failed to join room by ID:', error);
-            throw error;
-        }
-    }
-
-    async joinOrCreate(roomName: string = 'game_room', options: any = {}): Promise<Room> {
-        console.log('Attempting to join or create room:', roomName);
-        
-        if (!this.isConnected || !this.client) {
-            console.log('Not connected, attempting to connect first');
-            await this.connect();
-        }
-
-        if (!this.client) {
-            throw new Error('Client not initialized');
-        }
-
-        try {
-            if (this.room) {
-                console.log('Leaving existing room before joining new one');
-                await this.leave();
-            }
-
-            console.log('Joining or creating room...');
-            const room = await this.client.joinOrCreate(roomName, {
-                ...options,
-                retryTimes: 3,
-                retryDelay: 2000
+        return new Promise((resolve, reject) => {
+            this.socket!.emit('joinRoom', { roomId }, (response: any) => {
+                if (response.success) {
+                    this.currentRoom = roomId;
+                    resolve({
+                        id: roomId,
+                        sessionId: this.socket!.id,
+                        state: {
+                            players: new Map(),
+                            hostId: undefined
+                        }
+                    });
+                } else {
+                    reject(new Error(response.error || 'Failed to join room'));
+                }
             });
-            
-            if (!room) {
-                throw new Error('Failed to create or join room');
-            }
-
-            this.room = room;
-            this.setupRoomListeners();
-            console.log('Successfully joined room:', room.id);
-            return room;
-
-        } catch (error) {
-            console.error('Failed to join or create room:', error);
-            throw error;
-        }
-    }
-
-    async attemptReconnect(): Promise<void> {
-        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-            console.error('Max reconnection attempts reached');
-            return;
-        }
-
-        try {
-            this.reconnectAttempts++;
-            await this.connect();
-            if (this.room) {
-                const roomId = this.room.id;
-                await this.joinById(roomId);
-            }
-            this.reconnectAttempts = 0;
-        } catch (error) {
-            console.error('Reconnection attempt failed:', error);
-            setTimeout(() => this.attemptReconnect(), 1000 * Math.pow(2, this.reconnectAttempts));
-        }
-    }
-
-    setupRoomListeners(): void {
-        if (!this.room) return;
-
-        this.room.onStateChange((state: RoomState) => {
-            console.log('Room state changed:', state);
-        });
-
-        this.room.onError((code: number, message: string) => {
-            console.error('Room error:', code, message);
-            if (code === 4000) { // Connection lost
-                this.attemptReconnect();
-            }
         });
     }
 
-    async leave(): Promise<void> {
-        if (this.room) {
-            try {
-                await this.room.leave();
-            } catch (error) {
-                console.error('Error leaving room:', error);
-            }
-            this.room = null;
+    public leave(): void {
+        if (this.socket && this.currentRoom) {
+            this.socket.emit('leaveRoom', { roomId: this.currentRoom });
+            this.currentRoom = null;
         }
+        return;
     }
 
-    async disconnect(): Promise<void> {
-        console.log('Disconnecting client...');
-        
-        if (this.room) {
-            await this.leave();
-        }
-        
-        if (this.client?.connection) {
-            this.client.connection.close();
-        }
-        
-        this.isConnected = false;
-        this.client = null;
-        console.log('Client disconnected');
-    }
-
-    on(event: string, callback: Function): void {
-        if (!this.room) {
-            console.warn('Room not joined yet');
-            return;
+    public getRoom(): any {
+        if (!this.socket || !this.currentRoom) {
+            return null;
         }
 
-        const wrappedCallback = (...args: any[]) => {
-            try {
-                callback(...args);
-            } catch (error) {
-                console.error(`Error in ${event} listener:`, error);
+        return {
+            id: this.currentRoom,
+            sessionId: this.socket.id,
+            state: {
+                players: new Map(),
+                hostId: undefined
+            },
+            onStateChange: (callback: (state: any) => void) => {
+                this.socket!.on('stateChange', callback);
+            },
+            onMessage: (type: string, callback: (data: any) => void) => {
+                this.socket!.on(type, callback);
+            },
+            send: (type: string, data?: any, callback?: (response: any) => void) => {
+                if (callback) {
+                    this.socket!.emit(type, { ...data, roomId: this.currentRoom }, callback);
+                } else {
+                    this.socket!.emit(type, { ...data, roomId: this.currentRoom });
+                }
+            },
+            leave: () => this.leave(),
+            removeAllListeners: () => {
+                if (this.socket) {
+                    this.socket.removeAllListeners('stateChange');
+                    this.socket.removeAllListeners('gameStarted');
+                }
             }
         };
-
-        this.room.onMessage(event, wrappedCallback);
-        
-        if (!this.listeners.has(event)) {
-            this.listeners.set(event, new Set());
-        }
-        this.listeners.get(event)?.add(wrappedCallback);
     }
 
-    send(event: string, data: any): void {
-        if (!this.room || !this.isConnected) {
-            throw new Error('Not connected to room');
-        }
+    public getConnectionStatus(): boolean {
+        return this.isConnected;
+    }
 
-        try {
-            this.room.send(event, data);
-        } catch (error) {
-            console.error(`Error sending ${event}:`, error);
-            throw error;
+    public disconnect(): void {
+        if (this.socket) {
+            this.socket.disconnect();
+            this.socket = null;
+            this.isConnected = false;
+            this.currentRoom = null;
         }
     }
 
-    getRoom(): Room | null {
-        return this.room;
-    }
+    public async getAvailableRooms(): Promise<RoomListing[]> {
+        if (!this.socket) {
+            throw new Error('Not connected to server');
+        }
 
-    getConnectionStatus(): boolean {
-        return this.isConnected && !!this.client?.connection?.isOpen;
+        return new Promise((resolve, reject) => {
+            this.socket!.emit('getRooms', {}, (response: any) => {
+                if (response.success) {
+                    resolve(response.rooms);
+                } else {
+                    reject(new Error(response.error || 'Failed to get available rooms'));
+                }
+            });
+        });
     }
 }
 
 // Create singleton instance
-const gameClient = new GameClient();
-export default gameClient; 
+export const gameClient = new GameClient(); 

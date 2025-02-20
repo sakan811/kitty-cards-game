@@ -1,61 +1,47 @@
 import React, { createContext, useContext, useState } from 'react';
+import type { Player } from '../js/types/game';
 
-interface Player {
-    id: string;
-    ready: boolean;
-}
-
-interface GameState {
-    isPlaying: boolean;
+export interface GameState {
     roomCode: string | null;
     players: Player[];
-    currentTurn: string | null;
     hostId?: string;
+    gameStarted?: boolean;
+    currentTurn?: string;
+    isPlaying?: boolean;
 }
 
 interface GameContextType {
-    game: any | null;
-    setGame: React.Dispatch<React.SetStateAction<any | null>>;
-    currentScene: string | null;
-    setCurrentScene: React.Dispatch<React.SetStateAction<string | null>>;
     gameState: GameState;
     setGameState: React.Dispatch<React.SetStateAction<GameState>>;
 }
 
 const defaultGameState: GameState = {
-    isPlaying: false,
     roomCode: null,
     players: [],
-    currentTurn: null
+    hostId: undefined,
+    gameStarted: false,
+    currentTurn: undefined,
+    isPlaying: false
 };
 
-const GameContext = createContext<GameContextType | null>(null);
+const GameContext = createContext<GameContextType | undefined>(undefined);
 
-export function GameProvider({ children }: { children: React.ReactNode }) {
-    const [game, setGame] = useState<any | null>(null);
-    const [currentScene, setCurrentScene] = useState<string | null>(null);
+export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [gameState, setGameState] = useState<GameState>(defaultGameState);
 
-    const value = {
-        game,
-        setGame,
-        currentScene,
-        setCurrentScene,
-        gameState,
-        setGameState,
-    };
-
     return (
-        <GameContext.Provider value={value}>
+        <GameContext.Provider value={{ gameState, setGameState }}>
             {children}
         </GameContext.Provider>
     );
-}
+};
 
-export function useGame(): GameContextType {
+export const useGame = () => {
     const context = useContext(GameContext);
     if (!context) {
         throw new Error('useGame must be used within a GameProvider');
     }
     return context;
-} 
+};
+
+export default GameContext; 

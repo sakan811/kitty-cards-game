@@ -1,33 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '../context/GameContext';
-import gameClient from '../js/services/GameClient';
+import { gameClient } from '../js/services/GameClient';
 import GameScene from '../js/scenes/GameScene';
 import Phaser from '../js/lib/phaser.js';
-import { Room } from 'colyseus.js';
 
-interface GameState {
-    players: Map<string, Player>;
-    currentPlayer: string;
-    gameStarted: boolean;
-    tiles: Array<{
-        cupColor?: string;
-        tileIndex?: number;
-    }>;
-}
 
 interface Player {
     id: string;
     ready: boolean;
 }
 
-interface SceneData {
-    room: Room<GameState>;
-    roomCode: string;
-    playerId: string;
-    currentTurn: string;
-    gameState: GameState;
-}
 
 const Game: React.FC = () => {
     const gameContainerRef = useRef<HTMLDivElement>(null);

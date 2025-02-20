@@ -1,145 +1,141 @@
-import { Schema, MapSchema, ArraySchema, type } from "@colyseus/schema";
-
-export class Card extends Schema {
-    @type("string") type: string = "";
-    @type("string") color: string = "";
-    @type("number") value: number = 0;
-    @type("string") action: string = "";
+export interface Card {
+    id: string;
+    type: 'assist' | 'number';
+    value?: number;
+    color?: string;
 }
 
-export class Player extends Schema {
-    @type("string") id: string = "";
-    @type("boolean") ready: boolean = false;
-    @type("number") score: number = 0;
-    @type("boolean") hasDrawnAssist: boolean = false;
-    @type("boolean") hasDrawnNumber: boolean = false;
-    @type([Card]) hand: ArraySchema<Card> = new ArraySchema<Card>();
+export interface Player {
+    id: string;
+    ready: boolean;
+    hasDrawnAssist: boolean;
+    hasDrawnNumber: boolean;
+    score: number;
+    hand: Card[];
 }
 
-export class Tile extends Schema {
-    @type("number") index: number = 0;
-    @type("string") cupColor: string = 'white';
-    @type("boolean") hasNumber: boolean = false;
-    @type("number") number: number | null = null;
+export interface Room {
+    id: string;
+    players: Map<string, Player>;
+    state: GameState;
+    currentTurn: string;
+    isGameStarted: boolean;
 }
 
-export type AssistType = 'double' | 'swap' | 'peek';
-export type CupColor = 'brown' | 'green' | 'purple' | 'red' | 'white' | null;
-export type TurnState = 'waiting' | 'assist_phase' | 'number_phase';
+export interface Tile {
+    tileIndex: number;
+    cupColor?: string;
+    hasNumber: boolean;
+    number?: number;
+}
 
-export class GameState extends Schema {
-    @type({ map: Player }) players: MapSchema<Player> = new MapSchema<Player>();
-    @type("string") currentPlayer: string = "";
-    @type("string") turnState: TurnState = "waiting";
-    @type("boolean") gameStarted: boolean = false;
-    @type("boolean") gameEnded: boolean = false;
-    @type(["string"]) turnOrder: ArraySchema<string> = new ArraySchema<string>();
-    @type("number") currentTurn: number = 0;
-    @type([Card]) assistDeck: ArraySchema<Card> = new ArraySchema<Card>();
-    @type([Card]) numberDeck: ArraySchema<Card> = new ArraySchema<Card>();
-    @type([Card]) discardPile: ArraySchema<Card> = new ArraySchema<Card>();
-    @type([Tile]) tiles: ArraySchema<Tile> = new ArraySchema<Tile>();
+export class GameState {
+    private assistDeck: Card[] = [];
+    private numberDeck: Card[] = [];
+    private tiles: Tile[] = [];
 
     constructor() {
-        super();
         this.initializeDecks();
         this.initializeTiles();
     }
 
     private initializeDecks(): void {
-        // Initialize assist deck
-        const assistTypes: AssistType[] = ['double', 'swap', 'peek'];
-        for (const type of assistTypes) {
-            for (let i = 0; i < 2; i++) {
-                const card = new Card();
-                card.type = 'assist';
-                card.action = type;
-                this.assistDeck.push(card);
-            }
-        }
-        this.shuffleDeck(this.assistDeck);
+        // Initialize assist cards
+        const colors = ['brown', 'green', 'purple', 'red', 'white'];
+        colors.forEach((color, index) => {
+            this.assistDeck.push({
+                id: `assist_${index}`,
+                type: 'assist',
+                color
+            });
+        });
 
-        // Initialize number deck
-        const colors: CupColor[] = ['brown', 'green', 'purple', 'red', 'white'];
-        for (const color of colors) {
-            for (let value = 1; value <= 10; value++) {
-                const card = new Card();
-                card.type = 'number';
-                card.color = color;
-                card.value = value;
-                this.numberDeck.push(card);
-            }
+        // Initialize number cards (1-10)
+        for (let i = 1; i <= 10; i++) {
+            this.numberDeck.push({
+                id: `number_${i}`,
+                type: 'number',
+                value: i
+            });
         }
+
+        // Shuffle both decks
+        this.shuffleDeck(this.assistDeck);
         this.shuffleDeck(this.numberDeck);
     }
 
     private initializeTiles(): void {
-        const cupColors: CupColor[] = ['brown', 'green', 'purple', 'red'];
-        const positions: number[] = [0, 1, 2, 3, 4, 5, 6, 7];
-        
-        // Initialize all tiles with white cups
+        // Create 9 tiles (3x3 grid)
         for (let i = 0; i < 9; i++) {
-            const tile = new Tile();
-            tile.index = i;
-            tile.cupColor = 'white';
-            this.tiles.push(tile);
+            this.tiles.push({
+                tileIndex: i,
+                hasNumber: false
+            });
         }
 
-        // Set middle tile (index 8)
-        this.tiles[8].cupColor = null;
+        // Randomly assign colors to 4 cups
+        const colors = ['brown', 'green', 'purple', 'red'];
+        this.shuffleDeck(colors);
+        
+        // Assign colors to random tiles (excluding center tile)
+        const availableTiles = [0, 1, 2, 3, 4, 5, 6, 7]; // Exclude center tile (8)
+        this.shuffleDeck(availableTiles);
+        
+        for (let i = 0; i < 4; i++) {
+            const tileIndex = availableTiles[i];
+            this.tiles[tileIndex].cupColor = colors[i];
+        }
 
-        // Shuffle positions and assign random colors to 4 tiles
-        this.shuffleArray(positions);
-        positions.slice(0, 4).forEach((pos, idx) => {
-            this.tiles[pos].cupColor = cupColors[idx % cupColors.length];
+        // Set remaining cups to white
+        availableTiles.slice(4).forEach(tileIndex => {
+            this.tiles[tileIndex].cupColor = 'white';
         });
     }
 
-    private shuffleDeck<T>(deck: ArraySchema<T>): void {
+    private shuffleDeck<T>(deck: T[]): void {
         for (let i = deck.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [deck[i], deck[j]] = [deck[j], deck[i]];
         }
     }
 
-    private shuffleArray<T>(array: T[]): void {
-        for (let i = array.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [array[i], array[j]] = [array[j], array[i]];
-        }
+    public drawCard(type: 'assist' | 'number'): Card | undefined {
+        const deck = type === 'assist' ? this.assistDeck : this.numberDeck;
+        return deck.pop();
     }
 
-    public calculateScore(card: Card, cupColor: CupColor): number {
-        if (card.color === cupColor) {
-            return card.value * 2; // Double points for matching colors
-        }
-        if (cupColor === 'white') {
-            return card.value; // Normal points for white cups
-        }
-        return 0; // No points for non-matching colors
+    public placeNumber(tileIndex: number, number: number): boolean {
+        if (tileIndex < 0 || tileIndex >= this.tiles.length) return false;
+        if (this.tiles[tileIndex].hasNumber) return false;
+
+        this.tiles[tileIndex].hasNumber = true;
+        this.tiles[tileIndex].number = number;
+        return true;
     }
 
-    public getNextPlayer(): string | null {
-        if (!this.turnOrder.length) return null;
-        this.currentTurn = (this.currentTurn + 1) % this.turnOrder.length;
-        return this.turnOrder[this.currentTurn];
+    public calculateScore(tileIndex: number, card: Card): number {
+        const tile = this.tiles[tileIndex];
+        if (!tile || !card.value) return 0;
+
+        // Double points if colors match
+        if (tile.cupColor === card.color) {
+            return card.value * 2;
+        }
+
+        // White cups always give normal points
+        if (tile.cupColor === 'white') {
+            return card.value;
+        }
+
+        // No points if colors don't match
+        return 0;
     }
 
-    public setRandomTurnOrder(): string {
-        // Convert players to array and shuffle
-        const playerIds = Array.from(this.players.keys());
-        for (let i = playerIds.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [playerIds[i], playerIds[j]] = [playerIds[j], playerIds[i]];
-        }
-        
-        // Clear and set new turn order
-        this.turnOrder.length = 0;
-        playerIds.forEach(id => this.turnOrder.push(id));
-        
-        // Set initial current player
-        this.currentPlayer = this.turnOrder[0];
-        this.currentTurn = 0;
-        return this.currentPlayer;
+    public getTiles(): Tile[] {
+        return this.tiles;
+    }
+
+    public isGameOver(): boolean {
+        return this.tiles.every(tile => tile.hasNumber);
     }
 } 

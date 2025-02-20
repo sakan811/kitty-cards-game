@@ -1,36 +1,46 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useGame } from '../context/GameContext';
-import gameClient from '../js/services/GameClient';
-
-interface Player {
-    id: string;
-    ready: boolean;
-}
-
-interface GameState {
-    players: Map<string, Player>;
-    gameStarted: boolean;
-    hostId?: string;
-    currentTurn?: string;
-}
-
-interface GameStartMessage {
-    firstPlayer: string;
-}
+import { useGame, GameState } from '../context/GameContext';
+import { gameClient, RoomListing } from '../js/services/GameClient';
+import type { Player } from '../js/types/game';
 
 type ViewState = 'join' | 'waiting';
 
+interface GameStartMessage {
+    firstPlayer: string;
+    turnOrder: string[];
+}
+
+const defaultGameState: GameState = {
+    roomCode: null,
+    players: [],
+    hostId: undefined,
+    gameStarted: false,
+    currentTurn: undefined
+};
+
+const isValidGameState = (state: any): state is GameState => {
+    return (
+        typeof state === 'object' &&
+        state !== null &&
+        ('roomCode' in state || state.roomCode === null) &&
+        Array.isArray(state.players) &&
+        (state.hostId === undefined || typeof state.hostId === 'string') &&
+        typeof state.gameStarted === 'boolean' &&
+        (state.currentTurn === undefined || typeof state.currentTurn === 'string')
+    );
+};
+
 const Lobby: React.FC = () => {
     const navigate = useNavigate();
-    const { setGameState } = useGame();
+    const { gameState, setGameState } = useGame();
     const [view, setView] = useState<ViewState>('join');
     const [roomCode, setRoomCode] = useState<string>('');
-    const [playerId, setPlayerId] = useState<string | null>(null);
     const [players, setPlayers] = useState<Player[]>([]);
+    const [playerId, setPlayerId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState<boolean>(false);
-    const [isConnected, setIsConnected] = useState<boolean>(false);
+    const [isLoading, setIsLoading] = useState(false);
+    const [isConnected, setIsConnected] = useState(false);
     const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
     const mountedRef = useRef<boolean>(false);
     const navigatingToGame = useRef<boolean>(false);
@@ -112,15 +122,38 @@ const Lobby: React.FC = () => {
         const room = gameClient.getRoom();
         if (!room || !mountedRef.current) return;
 
-        const handleStateChange = (state: GameState) => {
+        const handleStateChange = async (state: any) => {
             if (!state || !mountedRef.current) return;
             
-            // Convert MapSchema to array and ensure no duplicates
-            const playersList = Array.from(state.players.values())
-                .filter((player): player is Player => player && typeof player.id === 'string')
-                .filter((player, index, self) => 
-                    index === self.findIndex(p => p.id === player.id)
-                );
+            console.log('State change received:', state);
+            
+            // Convert players to array format regardless of input type
+            let playersList: Player[];
+            
+            if (Array.isArray(state.players)) {
+                // Check if the first element is an array (tuple) or an object
+                const firstElement = state.players[0];
+                if (Array.isArray(firstElement)) {
+                    // Handle tuple format [id, player]
+                    playersList = state.players.map((entry: any) => {
+                        const [id, player] = entry;
+                        return { ...player, id };
+                    });
+                } else {
+                    // Handle object format { id, ...player }
+                    playersList = state.players;
+                }
+            } else if (state.players instanceof Map) {
+                playersList = Array.from(state.players.entries()).map((entry: any) => {
+                    const [id, player] = entry;
+                    return { ...player, id };
+                });
+            } else {
+                playersList = Object.entries(state.players).map((entry: any) => {
+                    const [id, player] = entry;
+                    return { ...player, id };
+                });
+            }
             
             setPlayers(playersList);
             
@@ -130,57 +163,149 @@ const Lobby: React.FC = () => {
                 setCurrentPlayer(current || null);
             }
             
-            // Check if all players are ready and game has started
+            // Check if game should start
             const allPlayersReady = playersList.length >= 2 && playersList.every(p => p.ready);
-            const shouldStartGame = state.gameStarted && allPlayersReady && mountedRef.current;
+            const shouldStartGame = state.isGameStarted && allPlayersReady;
             
             if (shouldStartGame && !navigatingToGame.current) {
+                console.log('Game should start from state change, preparing navigation...');
                 navigatingToGame.current = true;
+                
+                const room = gameClient.getRoom();
+                if (!room) {
+                    console.error('Failed to get room instance');
+                    navigatingToGame.current = false;
+                    setError('Failed to start game. Please try again.');
+                    return;
+                }
+                
                 // Update game state before navigation
-                setGameState(prev => ({
-                    ...prev,
-                    isPlaying: true,
-                    players: playersList,
+                const newGameState = {
                     roomCode: room.id,
-                    currentTurn: state.currentTurn || null
-                }));
-                // Use setTimeout to ensure state is updated before navigation
-                setTimeout(() => {
-                    if (mountedRef.current) {
-                        handleNavigateToGame();
-                    }
-                }, 0);
+                    players: playersList,
+                    hostId: state.hostId,
+                    gameStarted: true,
+                    currentTurn: state.currentTurn,
+                    isPlaying: true
+                };
+                
+                try {
+                    // Update state and wait for it to complete
+                    await new Promise<void>((resolve) => {
+                        setGameState(newGameState);
+                        // Give React a chance to update the state
+                        requestAnimationFrame(() => {
+                            requestAnimationFrame(() => resolve());
+                        });
+                    });
+                    
+                    console.log('Game state updated from state change, navigating to game...', newGameState);
+                    handleNavigateToGame();
+                } catch (error) {
+                    console.error('Failed to update game state:', error);
+                    navigatingToGame.current = false;
+                    setError('Failed to start game. Please try again.');
+                }
             }
         };
 
         // Listen for game started event
-        const handleGameStarted = (message: GameStartMessage) => {
+        const handleGameStarted = async (message: GameStartMessage) => {
             if (!mountedRef.current || navigatingToGame.current) return;
             
-            console.log('Game started:', message);
+            console.log('Game started event received:', message);
             navigatingToGame.current = true;
-            setGameState(prev => ({
-                ...prev,
-                isPlaying: true,
+            
+            const room = gameClient.getRoom();
+            if (!room) {
+                console.error('Failed to get room instance');
+                navigatingToGame.current = false;
+                setError('Failed to start game. Please try again.');
+                return;
+            }
+            
+            const newGameState = {
+                roomCode: room.id,
+                players: players,
+                hostId: undefined,
+                gameStarted: true,
                 currentTurn: message.firstPlayer,
-                roomCode: room.id
-            }));
-            // Use setTimeout to ensure state is updated before navigation
-            setTimeout(() => {
-                if (mountedRef.current) {
-                    handleNavigateToGame();
-                }
-            }, 0);
+                isPlaying: true
+            };
+            
+            try {
+                // Update state and wait for it to complete
+                await new Promise<void>((resolve) => {
+                    setGameState(newGameState);
+                    // Give React a chance to update the state
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => resolve());
+                    });
+                });
+                
+                console.log('Game state updated, navigating to game...', newGameState);
+                handleNavigateToGame();
+            } catch (error) {
+                console.error('Failed to update game state:', error);
+                navigatingToGame.current = false;
+                setError('Failed to start game. Please try again.');
+            }
         };
 
         room.onMessage('gameStarted', handleGameStarted);
-        room.onStateChange(handleStateChange);
+        room.onStateChange((state: {
+            players: Array<Player | [string, Player]> | Map<string, Player> | { [key: string]: Player },
+            currentTurn: string,
+            isGameStarted: boolean,
+            hostId?: string
+        }) => {
+            if (!state) return;
+            
+            // Convert players to array format regardless of input type
+            let playersList: Player[];
+            
+            if (Array.isArray(state.players)) {
+                // Check if the first element is an array (tuple) or an object
+                const firstElement = state.players[0];
+                if (Array.isArray(firstElement)) {
+                    // Handle tuple format [id, player]
+                    playersList = state.players.map((entry) => {
+                        if (Array.isArray(entry)) {
+                            const [id, player] = entry;
+                            return { ...player, id };
+                        }
+                        return entry;
+                    });
+                } else {
+                    // Handle object format { id, ...player }
+                    playersList = state.players as Player[];
+                }
+            } else if (state.players instanceof Map) {
+                playersList = Array.from(state.players.entries()).map((entry) => {
+                    const [id, player] = entry;
+                    return { ...player, id };
+                });
+            } else {
+                playersList = Object.entries(state.players).map((entry) => {
+                    const [id, player] = entry;
+                    return { ...player, id };
+                });
+            }
 
-        // Cleanup room listeners
+            setPlayers(playersList);
+            setGameState({
+                roomCode: room.id,
+                players: playersList,
+                hostId: state.hostId,
+                gameStarted: state.isGameStarted,
+                currentTurn: state.currentTurn || undefined
+            });
+        });
+
         return () => {
             room.removeAllListeners();
         };
-    }, [navigate, playerId, setGameState]);
+    }, [navigate, playerId, players, setGameState, handleNavigateToGame]);
 
     // Add retry connection button handler
     const handleRetryConnection = async () => {
@@ -202,21 +327,68 @@ const Lobby: React.FC = () => {
             setRoomCode(room.id);
             setPlayerId(room.sessionId);
             setView('waiting');
-            setGameState(prev => ({
-                ...prev,
+            setGameState({
                 roomCode: room.id,
-                players: [{ id: room.sessionId, ready: false }]
-            }));
+                players: [{ id: room.sessionId, ready: false }],
+                hostId: undefined,
+                gameStarted: false,
+                currentTurn: undefined
+            });
 
-            // Set up room state change listener
-            room.onStateChange((state: GameState) => {
+            // Get the room instance
+            const roomInstance = gameClient.getRoom();
+            if (!roomInstance) {
+                throw new Error('Failed to get room instance');
+            }
+
+            // Set up state change listener using Socket.IO events
+            roomInstance.onStateChange((state: {
+                players: Array<Player | [string, Player]> | Map<string, Player> | { [key: string]: Player },
+                currentTurn: string,
+                isGameStarted: boolean,
+                hostId?: string
+            }) => {
                 if (!state) return;
-                const playersList = Array.from(state.players.values());
+                
+                // Convert players to array format regardless of input type
+                let playersList: Player[];
+                
+                if (Array.isArray(state.players)) {
+                    // Check if the first element is an array (tuple) or an object
+                    const firstElement = state.players[0];
+                    if (Array.isArray(firstElement)) {
+                        // Handle tuple format [id, player]
+                        playersList = state.players.map((entry) => {
+                            if (Array.isArray(entry)) {
+                                const [id, player] = entry;
+                                return { ...player, id };
+                            }
+                            return entry;
+                        });
+                    } else {
+                        // Handle object format { id, ...player }
+                        playersList = state.players as Player[];
+                    }
+                } else if (state.players instanceof Map) {
+                    playersList = Array.from(state.players.entries()).map((entry) => {
+                        const [id, player] = entry;
+                        return { ...player, id };
+                    });
+                } else {
+                    playersList = Object.entries(state.players).map((entry) => {
+                        const [id, player] = entry;
+                        return { ...player, id };
+                    });
+                }
+
                 setPlayers(playersList);
-                setGameState(prev => ({
-                    ...prev,
-                    players: playersList
-                }));
+                setGameState({
+                    roomCode: room.id,
+                    players: playersList,
+                    hostId: state.hostId,
+                    gameStarted: state.isGameStarted,
+                    currentTurn: state.currentTurn || undefined
+                });
             });
 
         } catch (error) {
@@ -237,26 +409,85 @@ const Lobby: React.FC = () => {
             setIsLoading(true);
             setError(null);
 
-            // Ensure we're connected first
             if (!isConnected) {
                 await initializeConnection();
+            }
+
+            const availableRooms = await gameClient.getAvailableRooms();
+            const roomExists = availableRooms.some((room: RoomListing) => room.roomId === roomCode);
+            
+            if (!roomExists) {
+                throw new Error('Room does not exist or has ended');
             }
 
             const room = await gameClient.joinById(roomCode);
             
             setPlayerId(room.sessionId);
-            const playersList = Array.from(room.state.players.values()) as Player[];
-            setPlayers(playersList);
             setView('waiting');
-            setGameState(prev => ({
-                ...prev,
-                roomCode: room.id,
-                players: playersList,
-                hostId: room.state.hostId
-            }));
+            
+            // Get the room instance
+            const roomInstance = gameClient.getRoom();
+            if (!roomInstance) {
+                throw new Error('Failed to get room instance');
+            }
+
+            // Set up state change listener using Socket.IO events
+            roomInstance.onStateChange((state: {
+                players: Array<Player | [string, Player]> | Map<string, Player> | { [key: string]: Player },
+                currentTurn: string,
+                isGameStarted: boolean,
+                hostId?: string
+            }) => {
+                if (!state) return;
+                
+                // Convert players to array format regardless of input type
+                let playersList: Player[];
+                
+                if (Array.isArray(state.players)) {
+                    // Check if the first element is an array (tuple) or an object
+                    const firstElement = state.players[0];
+                    if (Array.isArray(firstElement)) {
+                        // Handle tuple format [id, player]
+                        playersList = state.players.map((entry) => {
+                            if (Array.isArray(entry)) {
+                                const [id, player] = entry;
+                                return { ...player, id };
+                            }
+                            return entry;
+                        });
+                    } else {
+                        // Handle object format { id, ...player }
+                        playersList = state.players as Player[];
+                    }
+                } else if (state.players instanceof Map) {
+                    playersList = Array.from(state.players.entries()).map((entry) => {
+                        const [id, player] = entry;
+                        return { ...player, id };
+                    });
+                } else {
+                    playersList = Object.entries(state.players).map((entry) => {
+                        const [id, player] = entry;
+                        return { ...player, id };
+                    });
+                }
+
+                setPlayers(playersList);
+                setGameState({
+                    roomCode: room.id,
+                    players: playersList,
+                    hostId: state.hostId,
+                    gameStarted: state.isGameStarted,
+                    currentTurn: state.currentTurn || undefined
+                });
+            });
+
         } catch (error) {
             console.error('Failed to join room:', error);
             setError(error instanceof Error ? error.message : 'Failed to join room. Please check the room code and try again.');
+            
+            setRoomCode('');
+            setPlayers([]);
+            setGameState(defaultGameState);
         } finally {
             setIsLoading(false);
         }
@@ -270,10 +501,94 @@ const Lobby: React.FC = () => {
         }
 
         try {
-            room.send('ready');
+            console.log('Sending ready event...');
+            // Send ready event with callback to handle response
+            room.send('ready', { roomId: room.id }, (response: any) => {
+                console.log('Ready response received:', response);
+                if (!response.success) {
+                    console.error('Failed to update ready state:', response.error);
+                    setError(response.error || 'Failed to update ready state. Please try again.');
+                    return;
+                }
+
+                // Update local state immediately
+                const currentPlayer = players.find(p => p.id === playerId);
+                if (currentPlayer) {
+                    const updatedPlayers = players.map(p => 
+                        p.id === playerId ? { ...p, ready: response.ready } : p
+                    );
+                    setPlayers(updatedPlayers);
+                    setCurrentPlayer({ ...currentPlayer, ready: response.ready });
+                }
+
+                // If game has started, handle navigation
+                if (response.gameStarted && response.gameStartMessage) {
+                    console.log('Game started from ready response:', response.gameStartMessage);
+                    navigatingToGame.current = true;
+                    const newGameState = {
+                        roomCode: room.id,
+                        players: response.state.players,
+                        hostId: response.state.hostId,
+                        gameStarted: true,
+                        currentTurn: response.gameStartMessage.firstPlayer,
+                        isPlaying: true
+                    };
+                    setGameState(newGameState);
+                    // Navigate after a short delay to ensure state is updated
+                    setTimeout(() => {
+                        if (mountedRef.current) {
+                            console.log('Navigating to game from ready response...');
+                            handleNavigateToGame();
+                        }
+                    }, 100);
+                } else if (response.state) {
+                    // Handle regular state update
+                    handleStateUpdate(response.state);
+                }
+            });
         } catch (error) {
             console.error('Failed to send ready state:', error);
             setError('Failed to update ready state. Please try again.');
+        }
+    };
+
+    const handleStateUpdate = (state: any) => {
+        if (!state) return;
+
+        // Convert players array to proper format if needed
+        const playersList = Array.isArray(state.players) 
+            ? state.players 
+            : Array.from(state.players.values());
+
+        const newState = {
+            roomCode: state.roomCode || roomCode || null,
+            players: playersList,
+            hostId: state.hostId,
+            gameStarted: state.isGameStarted || false,
+            currentTurn: state.currentTurn || undefined,
+            isPlaying: state.isGameStarted || false
+        };
+
+        if (isValidGameState(newState)) {
+            setGameState(newState);
+            setPlayers(playersList);
+            const current = playersList.find((p: Player) => p.id === playerId);
+            if (current) {
+                setCurrentPlayer(current);
+            }
+        }
+    };
+
+    const handleGameStart = (message: GameStartMessage) => {
+        const newState = {
+            ...gameState,
+            gameStarted: true,
+            currentTurn: message.firstPlayer
+        };
+
+        if (isValidGameState(newState)) {
+            setGameState(newState);
+            navigate('/game');
         }
     };
 
@@ -282,11 +597,7 @@ const Lobby: React.FC = () => {
         setView('join');
         setRoomCode('');
         setPlayers([]);
-        setGameState(prev => ({
-            ...prev,
-            roomCode: null,
-            players: []
-        }));
+        setGameState(defaultGameState);
     };
 
     return (
@@ -344,7 +655,7 @@ const Lobby: React.FC = () => {
                     </div>
                 </div>
             ) : (
-                <div className="lobby-menu">
+                <div className="waiting-room">
                     <div className="lobby-room-info">
                         <h2 className="text-xl mb-2">Room Code:</h2>
                         <div className="flex items-center justify-center gap-2">
@@ -403,4 +714,4 @@ const Lobby: React.FC = () => {
     );
 };
 
-export default Lobby; 
+export default Lobby;
