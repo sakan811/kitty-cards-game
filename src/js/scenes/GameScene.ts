@@ -610,12 +610,6 @@ export default class GameScene extends Scene implements IGameScene {
                     return;
                 }
 
-                // Check socket manager
-                if (!this.socketManager) {
-                    this.showErrorMessage("Game connection not initialized");
-                    return;
-                }
-
                 // Disable deck interaction while processing
                 deck.disableInteractive();
                 deck.setTint(0x666666);
@@ -638,47 +632,11 @@ export default class GameScene extends Scene implements IGameScene {
                         this.hasDrawnNumber = true;
                     }
 
-                    // Now send to server for validation
-                    try {
-                        await this.socketManager.drawCard(type);
-                        console.log(`Server validated ${type} card draw`);
-                    } catch (error) {
-                        console.error(`Server rejected ${type} card draw:`, error);
-                        
-                        // Revert local state
-                        if (type === 'assist') {
-                            this.hasDrawnAssist = false;
-                        } else {
-                            this.hasDrawnNumber = false;
-                        }
-
-                        // Remove the temporary card and show error
-                        const handContainer = this.children.getByName('player-hand') as Phaser.GameObjects.Container;
-                        if (handContainer) {
-                            const lastCard = (handContainer as any).list[(handContainer as any).list.length - 1];
-                            if (lastCard) {
-                                this.add.tween({
-                                    targets: lastCard,
-                                    alpha: 0,
-                                    duration: 200,
-                                    onComplete: () => {
-                                        lastCard.destroy();
-                                        
-                                        // Show error message after card is removed
-                                        const errorMsg = error instanceof Error ? error.message : "Failed to draw card";
-                                        this.showErrorMessage(errorMsg);
-                                        
-                                        // If it's a connection error, try to reconnect
-                                        if (errorMsg.includes('connection') && this.socketManager) {
-                                            this.socketManager.reconnect().catch((error: Error) => {
-                                                console.error('Failed to reconnect:', error);
-                                                this.showErrorMessage('Connection lost. Please refresh the page.');
-                                            });
-                                        }
-                                    }
-                                });
-                            }
-                        }
+                    // Try to notify server about the draw, but don't wait for response
+                    if (this.socketManager) {
+                        this.socketManager.drawCard(type).catch(error => {
+                            console.warn('Failed to notify server about card draw:', error);
+                        });
                     }
 
                 } catch (error) {

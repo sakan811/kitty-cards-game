@@ -73,6 +73,8 @@ export class SocketManager {
     private reconnectAttempts: number = 0;
     private maxReconnectAttempts: number = 3;
     private endpoint: string;
+    private heartbeatInterval: NodeJS.Timeout | null = null;
+    private readonly HEARTBEAT_INTERVAL = 30000; // 30 seconds
 
     constructor(scene: IGameScene, endpoint: string) {
         this.scene = scene;
@@ -95,6 +97,7 @@ export class SocketManager {
         
         if (this.socket) {
             this.setupListeners();
+            this.startHeartbeat();
             this.isInitialized = true;
         } else {
             console.warn('No socket provided to SocketManager');
@@ -124,6 +127,43 @@ export class SocketManager {
 
     private setupListeners(): void {
         if (!this.socket || this.isDestroyed || this.cleanupStarted || !this.isInitialized) return;
+
+        // Handle connection state changes
+        if (this.socket.connection) {
+            // Use the WebSocket directly if available
+            const ws = (this.socket.connection as any)?.ws;
+            if (ws) {
+                // Listen for WebSocket close events
+                ws.addEventListener('close', async (event: CloseEvent) => {
+                    if (this.isDestroyed || this.cleanupStarted) return;
+                    
+                    console.log('WebSocket closed:', event.code, event.reason);
+                    // Stop heartbeat when connection is lost
+                    this.stopHeartbeat();
+                    
+                    // Attempt reconnection
+                    const reconnected = await this.validateConnection();
+                    if (reconnected) {
+                        console.log('Successfully reconnected after close');
+                        this.startHeartbeat();
+                    } else {
+                        console.error('Failed to reconnect after close');
+                        if (this.scene && !this.scene.isDestroyed) {
+                            this.scene.showErrorMessage('Connection lost. Attempting to reconnect...');
+                        }
+                    }
+                });
+
+                // Listen for WebSocket error events
+                ws.addEventListener('error', async (event: Event) => {
+                    if (this.isDestroyed || this.cleanupStarted) return;
+                    
+                    console.error('WebSocket error:', event);
+                    // Attempt reconnection on error
+                    await this.validateConnection();
+                });
+            }
+        }
 
         // Set up error handler
         const errorHandler = (message?: string): void => {
@@ -248,6 +288,7 @@ export class SocketManager {
         this.isInitialized = false;
         
         try {
+            this.stopHeartbeat();
             this.removeListeners();
             
             // Clear references
@@ -260,6 +301,17 @@ export class SocketManager {
     }
 
     // Game action methods
+    private async connect(): Promise<Client> {
+        try {
+            // Create new client without reconnection
+            const client = new Client(this.endpoint);
+            return client;
+        } catch (error) {
+            console.error('Failed to connect to server:', error);
+            throw error;
+        }
+    }
+
     private async attemptReconnection(retries: number = 3, delay: number = 1000): Promise<boolean> {
         if (this.isDestroyed || this.cleanupStarted || !this.isInitialized) return false;
         
@@ -267,88 +319,73 @@ export class SocketManager {
             try {
                 console.log(`Reconnection attempt ${i + 1}/${retries}`);
                 
-                // Check if socket is already open
-                const wsState = this.socket?.connection?.readyState ?? this.socket?.readyState;
-                if (wsState === WebSocketState.OPEN && this.socket?.hasJoined) {
-                    console.log('Socket is already open and joined');
-                    return true;
+                // Store session info before any cleanup
+                const sessionId = this.socket?.sessionId;
+                const roomId = this.socket?.roomId;
+
+                if (!sessionId || !roomId) {
+                    console.warn('Missing session or room ID for reconnection');
+                    continue;
                 }
 
-                // If socket is in CLOSING or CLOSED state, wait for it to fully close
-                if (wsState === WebSocketState.CLOSING || wsState === WebSocketState.CLOSED) {
-                    console.log('Waiting for socket to fully close...');
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                // If socket exists and is in a bad state, clean it up
+                if (this.socket) {
+                    const wsState = this.socket.connection?.readyState ?? this.socket.readyState;
+                    if (wsState === WebSocketState.CLOSING || wsState === WebSocketState.CLOSED) {
+                        try {
+                            await this.socket.leave();
+                        } catch (error) {
+                            console.warn('Error leaving room:', error);
+                        }
+                        // Remove all listeners from the old socket
+                        this.removeListeners();
+                    }
                 }
-                
+
                 // Wait before attempting reconnection with progressive delay
                 await new Promise(resolve => setTimeout(resolve, delay * Math.pow(1.5, i)));
-                
-                // Attempt to reconnect
-                if (this.socket) {
-                    try {
-                        // Get the reconnection token if available
-                        const sessionId = this.socket.sessionId;
-                        const roomId = this.socket.roomId;
-                        
-                        if (!sessionId || !roomId) {
-                            console.warn('Missing session or room ID for reconnection');
-                            continue;
-                        }
 
-                        // Try to reconnect using the room's built-in reconnection mechanism
-                        await new Promise<void>((resolve, reject) => {
-                            const timeoutId = setTimeout(() => {
-                                reject(new Error('Reconnection timeout'));
-                            }, 5000);
-
-                            // Set up temporary error handler
-                            const errorHandler = (code: number, message?: string) => {
-                                clearTimeout(timeoutId);
-                                reject(new Error(`Reconnection failed: ${message || code}`));
-                            };
-                            
-                            // Set up temporary success handler
-                            const stateChangeHandler = () => {
-                                if (this.socket?.hasJoined) {
-                                    clearTimeout(timeoutId);
-                                    resolve();
-                                }
-                            };
-                            
-                            // Add temporary handlers
-                            this.socket?.onError(errorHandler);
-                            this.socket?.onStateChange(stateChangeHandler);
-                            
-                            try {
-                                // First check if we can use the client's reconnect method
-                                if (this.socket?.connection && typeof this.socket.connection.reconnect === 'function') {
-                                    this.socket.connection.reconnect();
-                                } else {
-                                    // Fallback to manual reconnection
-                                    this.socket?.send('reconnect', {
-                                        sessionId,
-                                        roomId
-                                    });
-                                }
-                            } catch (error) {
-                                clearTimeout(timeoutId);
-                                reject(error);
-                            }
-                        });
-                        
-                        // Wait for connection to be established
-                        const connected = await this.waitForConnection(5000);
-                        if (connected) {
-                            console.log('Reconnection successful');
-                            // Re-setup listeners
-                            this.setupListeners();
-                            return true;
-                        }
-                    } catch (reconnectError) {
-                        console.warn(`Reconnection attempt ${i + 1} failed:`, reconnectError);
-                        // If this is the last attempt, throw the error
-                        if (i === retries - 1) throw reconnectError;
+                try {
+                    // Create new client and attempt to rejoin with the same sessionId
+                    console.log('Creating new client and rejoining room...');
+                    const client = await this.connect();
+                    
+                    // Join the room with the same sessionId to maintain state
+                    const newSocket = await client.joinById(roomId, { 
+                        sessionId: sessionId,
+                        retryTimes: 3,
+                        requestId: Date.now()
+                    }) as ExtendedRoom;
+                    
+                    if (!newSocket) {
+                        throw new Error('Failed to create new socket connection');
                     }
+
+                    // Update socket reference
+                    this.socket = newSocket;
+
+                    // Wait for connection to stabilize
+                    const connected = await this.waitForConnection(5000);
+                    if (!connected) {
+                        throw new Error('Failed to establish stable connection');
+                    }
+
+                    // Double-check connection state
+                    if (!this.socket.hasJoined || this.socket.connection?.readyState !== WebSocketState.OPEN) {
+                        throw new Error('Connection state mismatch after reconnection');
+                    }
+
+                    // Re-setup listeners for the new socket
+                    this.setupListeners();
+                    // Restart heartbeat
+                    this.startHeartbeat();
+                    console.log('Reconnection successful');
+                    return true;
+
+                } catch (reconnectError) {
+                    console.warn(`Reconnection attempt ${i + 1} failed:`, reconnectError);
+                    // If this is the last attempt, throw the error
+                    if (i === retries - 1) throw reconnectError;
                 }
             } catch (error) {
                 console.warn(`Reconnection attempt ${i + 1} failed:`, error);
@@ -407,28 +444,37 @@ export class SocketManager {
             return false;
         }
 
-        // Check if socket exists and is in a valid state
-        const isValid = this.socket.hasJoined && 
-            (this.socket.connection?.readyState === WebSocketState.OPEN ||
-            (this.socket as any)?.connection?.ws?.readyState === WebSocketState.OPEN);
+        // Get the raw WebSocket if available
+        const ws = (this.socket.connection as any)?.ws;
+        const wsState = ws?.readyState ?? this.socket.connection?.readyState ?? this.socket.readyState;
+
+        // Check both the socket join state and WebSocket state
+        const isValid = this.socket.hasJoined && wsState === WebSocketState.OPEN;
 
         if (!isValid) {
-            console.log('Socket not in valid state, attempting reconnection...');
-            return await this.attemptReconnection();
+            console.log('Socket validation failed:', {
+                hasJoined: this.socket.hasJoined,
+                wsState,
+                expectedState: WebSocketState.OPEN
+            });
+
+            // If WebSocket is closed but hasJoined is true, the connection was lost
+            if (this.socket.hasJoined && wsState !== WebSocketState.OPEN) {
+                console.log('WebSocket connection lost, attempting reconnection...');
+                // Stop heartbeat before reconnection attempt
+                this.stopHeartbeat();
+                const success = await this.attemptReconnection();
+                if (success) {
+                    // Restart heartbeat after successful reconnection
+                    this.startHeartbeat();
+                }
+                return success;
+            }
+
+            return false;
         }
 
         return true;
-    }
-
-    private async connect(): Promise<Client> {
-        try {
-            const client = new Client(this.endpoint);
-            await client.reconnect(Date.now().toString());
-            return client;
-        } catch (error) {
-            console.error('Failed to connect to server:', error);
-            throw error;
-        }
     }
 
     private async reconnectAndDraw(type: 'assist' | 'number'): Promise<void> {
@@ -508,19 +554,78 @@ export class SocketManager {
         throw new Error('Failed to establish connection after multiple attempts');
     }
 
+    public async drawCard(type: 'assist' | 'number'): Promise<void> {
+        console.log(`Attempting to draw ${type} card...`);
+        
+        if (this.isDestroyed || this.cleanupStarted) {
+            throw new Error('Socket manager is being destroyed');
+        }
+
+        let retries = 0;
+        const maxRetries = 3;
+
+        while (retries < maxRetries) {
+            try {
+                // Check if we have a valid socket
+                if (!this.socket?.hasJoined) {
+                    // Try to reconnect
+                    const reconnected = await this.validateConnection();
+                    if (!reconnected) {
+                        throw new Error('Failed to establish connection');
+                    }
+                }
+
+                // Double check socket state
+                const wsState = this.socket?.connection?.readyState ?? WebSocketState.CLOSED;
+                if (wsState !== WebSocketState.OPEN) {
+                    throw new Error('Socket not in OPEN state');
+                }
+
+                // Use the robust sendDrawCardRequest method
+                await this.sendDrawCardRequest(type);
+
+                // Only emit success event after server confirms
+                if (this.scene && !this.scene.isDestroyed) {
+                    this.scene.events.emit('cardDrawn', {
+                        type,
+                        success: true
+                    });
+                }
+
+                // If we get here, the operation was successful
+                return;
+
+            } catch (error) {
+                retries++;
+                console.warn(`Draw card attempt ${retries} failed:`, error);
+
+                if (retries >= maxRetries) {
+                    console.error('Error drawing card after all retries:', error);
+                    if (this.scene && !this.scene.isDestroyed) {
+                        const errorMsg = error instanceof Error ? error.message : 'Failed to draw card';
+                        this.scene.showErrorMessage(errorMsg);
+                        throw error;
+                    }
+                }
+
+                // Wait before retrying
+                await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retries)));
+            }
+        }
+    }
+
     private async sendDrawCardRequest(type: 'assist' | 'number'): Promise<void> {
-        // Ensure connection is in a good state
-        const connected = await this.waitForConnection(5000);
-        if (!connected) {
-            throw new Error('Connection not stable for sending messages');
+        // Validate connection before attempting to send
+        const isValid = await this.validateConnection();
+        if (!isValid) {
+            throw new Error('Failed to establish valid connection');
         }
 
-        if (!this.socket?.hasJoined || this.socket.connection?.readyState !== 1) {
-            throw new Error('Socket not in valid state for sending messages');
+        if (!this.socket?.hasJoined) {
+            throw new Error('Socket not connected');
         }
 
-        const socket = this.socket;
-        let messageHandlersRegistered = false;
+        const socket = this.socket; // Store reference to avoid null checks
 
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
@@ -529,7 +634,6 @@ export class SocketManager {
             }, 10000);
 
             const onCardDrawn = (message: any) => {
-                console.log('Received cardDrawn message:', message);
                 if (message.type === type) {
                     cleanupListeners();
                     resolve();
@@ -537,129 +641,27 @@ export class SocketManager {
             };
 
             const onError = (error: any) => {
-                console.error('Received error from server:', error);
                 cleanupListeners();
                 reject(new Error(error.error || 'Failed to draw card'));
             };
 
-            const onStateChange = () => {
-                // Monitor connection state changes during request
-                if (!socket.hasJoined || socket.connection?.readyState !== 1) {
-                    cleanupListeners();
-                    reject(new Error('Connection lost during draw request'));
-                }
-            };
-
             const cleanupListeners = () => {
-                console.log('Cleaning up draw card listeners');
                 clearTimeout(timeout);
-                
-                if (messageHandlersRegistered && socket) {
-                    try {
-                        // Remove message handlers
-                        socket.removeAllListeners();
-                        // Re-initialize basic room listeners
-                        this.setupListeners();
-                    } catch (error) {
-                        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                        console.warn('Error during listener cleanup:', errorMessage);
-                    }
-                }
+                socket.removeListener('cardDrawn', onCardDrawn);
+                socket.removeListener('error', onError);
             };
 
             try {
-                // Final connection check before sending
-                if (!socket.hasJoined || socket.connection?.readyState !== 1) {
-                    throw new Error('Connection lost while setting up draw request');
-                }
-
                 // Add message listeners
                 socket.onMessage('cardDrawn', onCardDrawn);
                 socket.onMessage('error', onError);
-                socket.onStateChange(onStateChange);
-                messageHandlersRegistered = true;
 
                 // Send the draw card request
                 console.log(`Sending drawCard request for ${type}`);
                 socket.send('drawCard', { type });
             } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                console.error('Error during draw card setup:', errorMessage);
                 cleanupListeners();
-                reject(new Error(`Failed to setup draw card request: ${errorMessage}`));
-            }
-        });
-    }
-
-    public async drawCard(type: 'assist' | 'number'): Promise<void> {
-        console.log(`Attempting to draw ${type} card...`);
-        
-        if (this.isDestroyed || this.cleanupStarted) {
-            throw new Error('Socket manager is being destroyed');
-        }
-
-        // Validate connection before proceeding
-        const isConnected = await this.validateConnection();
-        if (!isConnected) {
-            throw new Error('Failed to establish connection');
-        }
-
-        return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                cleanup();
-                reject(new Error('Draw card request timed out'));
-            }, 10000); // Increased timeout for validation
-
-            const cleanup = () => {
-                clearTimeout(timeout);
-                if (this.socket) {
-                    // Remove all message handlers and re-initialize base listeners
-                    this.socket.removeAllListeners();
-                    this.setupListeners();
-                }
-            };
-
-            try {
-                if (!this.socket) {
-                    throw new Error('Socket not available');
-                }
-
-                // Create message handlers
-                const drawValidatedHandler = (message: any) => {
-                    if (message.type === type) {
-                        // Server validated the draw
-                        console.log('Draw validated by server:', message);
-                        cleanup();
-                        resolve();
-                    }
-                };
-
-                const drawRejectedHandler = (error: any) => {
-                    console.error('Draw rejected by server:', error);
-                    cleanup();
-                    
-                    // Emit event for game scene to handle rejection (revert local state)
-                    if (this.scene && !this.scene.isDestroyed) {
-                        this.scene.events.emit('drawRejected', {
-                            type,
-                            error: error.error || 'Failed to draw card'
-                        });
-                    }
-                    
-                    reject(new Error(error.error || 'Failed to draw card'));
-                };
-
-                // Register validation handlers
-                this.socket.onMessage('drawValidated', drawValidatedHandler);
-                this.socket.onMessage('drawRejected', drawRejectedHandler);
-
-                // Send the draw request for validation
-                console.log(`Sending drawCard request for ${type}`);
-                this.socket.send('drawCard', { type });
-
-            } catch (error) {
-                cleanup();
-                reject(new Error('Failed to send draw card request'));
+                reject(error);
             }
         });
     }
@@ -748,5 +750,45 @@ export class SocketManager {
     public async reconnect(): Promise<boolean> {
         console.log('Attempting to reconnect...');
         return this.attemptReconnection();
+    }
+
+    private startHeartbeat(): void {
+        // Clear any existing heartbeat
+        this.stopHeartbeat();
+
+        // Start new heartbeat interval
+        this.heartbeatInterval = setInterval(async () => {
+            try {
+                if (!this.socket || this.isDestroyed || this.cleanupStarted) {
+                    this.stopHeartbeat();
+                    return;
+                }
+
+                const wsState = (this.socket.connection as any)?.ws?.readyState ?? 
+                              this.socket.connection?.readyState ?? 
+                              this.socket.readyState;
+
+                if (wsState === WebSocketState.OPEN) {
+                    this.socket.send('heartbeat');
+                } else {
+                    console.log('Connection not open during heartbeat, validating...');
+                    const isValid = await this.validateConnection();
+                    if (!isValid) {
+                        console.warn('Failed to validate connection during heartbeat');
+                        this.stopHeartbeat();
+                    }
+                }
+            } catch (error) {
+                console.warn('Error during heartbeat:', error);
+                await this.validateConnection();
+            }
+        }, this.HEARTBEAT_INTERVAL);
+    }
+
+    private stopHeartbeat(): void {
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
     }
 } 
