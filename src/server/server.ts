@@ -3,11 +3,12 @@ import { NoKittyCardsGame } from '../js/game/NoKittyCardsGame';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import koaStatic from 'koa-static';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const server = Server({
+const server = new Server({
   games: [NoKittyCardsGame],
   origins: [
     // Allow localhost in development
@@ -23,7 +24,7 @@ const PORT = Number(process.env.PORT) || 8000;
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
   const frontEndAppBuildPath = path.resolve(__dirname, '../dist');
-  server.app.use(require('koa-static')(frontEndAppBuildPath));
+  server.app.use(koaStatic(frontEndAppBuildPath));
 }
 
 server.run(PORT, () => {

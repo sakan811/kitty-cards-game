@@ -124,18 +124,22 @@
   }
 
   .lobby-player-item {
-    @apply flex items-center justify-between bg-gray-700 p-3 rounded mb-2 last:mb-0;
+    @apply flex justify-between items-center p-4 bg-gray-800 rounded-lg mb-2;
   }
 
   .lobby-player-status {
-    @apply px-3 py-1 rounded text-sm font-semibold;
+    @apply px-3 py-1 rounded-full text-sm font-medium;
   }
 
   .lobby-player-ready {
-    @apply bg-green-600 text-white;
+    @apply bg-green-500 text-white;
   }
 
-  .lobby-player-not-ready {
-    @apply bg-red-600 text-white;
+  .lobby-player-waiting {
+    @apply bg-yellow-500 text-white;
+  }
+
+  .lobby-player-empty {
+    @apply bg-gray-500 text-white;
   }
 } 
