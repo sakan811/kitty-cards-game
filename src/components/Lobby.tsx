@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LobbyClient } from 'boardgame.io/client';
 import { useGame } from '../context/GameContext';
@@ -6,6 +6,20 @@ import { useGame } from '../context/GameContext';
 const GAME_NAME = 'no-kitty-cards-game';
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000;
+
+interface Player {
+    id: string;
+    name: string;
+    isReady?: boolean;
+}
+
+interface MatchPlayer {
+    id: number;
+    name?: string;
+    data?: {
+        ready: boolean;
+    };
+}
 
 const lobbyClient = new LobbyClient({ 
   server: process.env.NODE_ENV === 'production' 
@@ -34,6 +48,54 @@ const Lobby: React.FC = () => {
     const [roomCode, setRoomCode] = useState<string>('');
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [players, setPlayers] = useState<Player[]>([]);
+    const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
+    const [isReady, setIsReady] = useState(false);
+
+    // Poll for match updates when in waiting room
+    useEffect(() => {
+        if (view === 'waiting' && gameState.roomCode) {
+            const fetchMatchStatus = async () => {
+                try {
+                    const match = await lobbyClient.getMatch(GAME_NAME, gameState.roomCode!);
+                    if (match && match.players) {
+                        const activePlayers = match.players
+                            .filter((p: MatchPlayer) => p.name) // Only include players that have joined
+                            .map((p: MatchPlayer) => ({
+                                id: p.id.toString(),
+                                name: p.name || `Player ${p.id + 1}`,
+                                isReady: p.data?.ready || false
+                            }));
+                        setPlayers(activePlayers);
+                        
+                        // Update local ready state
+                        const currentPlayer = match.players.find((p: MatchPlayer) => p.id.toString() === gameState.playerID);
+                        setIsReady(currentPlayer?.data?.ready || false);
+                    }
+                } catch (error) {
+                    console.error('Error fetching match status:', error);
+                }
+            };
+
+            // Initial fetch
+            fetchMatchStatus();
+
+            // Set up polling
+            const interval = setInterval(fetchMatchStatus, 2000);
+            setPollInterval(interval);
+
+            return () => {
+                if (interval) clearInterval(interval);
+            };
+        }
+    }, [view, gameState.roomCode, gameState.playerID]);
+
+    // Clean up polling on unmount
+    useEffect(() => {
+        return () => {
+            if (pollInterval) clearInterval(pollInterval);
+        };
+    }, [pollInterval]);
 
     const handleCreateRoom = async () => {
         try {
@@ -195,6 +257,32 @@ const Lobby: React.FC = () => {
         }
     };
 
+    const handleToggleReady = async () => {
+        if (!gameState.roomCode || !gameState.playerID || !gameState.credentials) {
+            setError('Invalid game state');
+            return;
+        }
+
+        try {
+            setIsLoading(true);
+            await lobbyClient.updatePlayer(
+                GAME_NAME,
+                gameState.roomCode,
+                {
+                    playerID: gameState.playerID,
+                    credentials: gameState.credentials,
+                    data: { ready: !isReady }
+                }
+            );
+            setIsReady(!isReady);
+        } catch (error) {
+            console.error('Failed to update ready status:', error);
+            setError('Failed to update ready status');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     return (
         <div className="lobby-container">
             <h1 className="lobby-title">No Kitty Card Game</h1>
@@ -277,19 +365,47 @@ const Lobby: React.FC = () => {
 
                     <div className="lobby-players-list">
                         <h2 className="text-xl mb-4">Players</h2>
-                        <div className="lobby-player-item">
-                            <span>Player {gameState.playerID}</span>
-                            <span className="lobby-player-status lobby-player-ready">
-                                Ready
-                            </span>
-                        </div>
+                        {[0, 1].map((playerNum) => {
+                            const player = players.find(p => p.id === playerNum.toString());
+                            const isCurrentPlayer = playerNum.toString() === gameState.playerID;
+                            
+                            return (
+                                <div key={playerNum} className="lobby-player-item">
+                                    {player ? (
+                                        <>
+                                            <span>{player.name}</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className={`lobby-player-status ${player.isReady ? 'lobby-player-ready' : 'lobby-player-waiting'}`}>
+                                                    {player.isReady ? 'Ready' : 'Not Ready'}
+                                                </span>
+                                                {isCurrentPlayer && (
+                                                    <button
+                                                        className={`lobby-button ${isReady ? 'lobby-button-gray' : 'lobby-button-green'} py-1 px-3`}
+                                                        onClick={handleToggleReady}
+                                                        disabled={isLoading}
+                                                    >
+                                                        {isReady ? 'Cancel' : 'Ready'}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span>Waiting for Player {playerNum + 1}</span>
+                                            <span className="lobby-player-status lobby-player-empty">Empty</span>
+                                        </>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
 
                     <div className="flex gap-4 mt-4">
-                        {gameState.playerID === '0' && (
+                        {gameState.playerID === '0' && players.length === 2 && players.every(p => p.isReady) && (
                             <button 
                                 className="lobby-button lobby-button-green flex-1"
                                 onClick={handleStartGame}
+                                disabled={isLoading}
                             >
                                 Start Game
                             </button>
@@ -297,6 +413,7 @@ const Lobby: React.FC = () => {
                         <button 
                             className="lobby-button lobby-button-gray flex-1"
                             onClick={handleLeaveRoom}
+                            disabled={isLoading}
                         >
                             Leave Room
                         </button>
