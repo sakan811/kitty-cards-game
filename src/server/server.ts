@@ -1,33 +1,30 @@
-import { Server, Origins } from 'boardgame.io/server';
+import { Server, Origins } from 'boardgame.io/dist/cjs/server';
 import { NoKittyCardsGame } from '../js/game/NoKittyCardsGame';
 import path from 'path';
-import express from 'express';
-import cors from 'cors';
-import { Middleware } from 'koa';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const server = Server({
   games: [NoKittyCardsGame],
-  origins: [Origins.LOCALHOST],
+  origins: [
+    // Allow localhost in development
+    Origins.LOCALHOST,
+    Origins.LOCALHOST_IN_DEVELOPMENT,
+    // Allow your game site to connect
+    process.env.NODE_ENV === 'production' ? 'https://yourgame.com' : '*'
+  ],
 });
 
-// Enable CORS for all origins in development
-const corsOptions = {
-  origin: process.env.NODE_ENV === 'development' ? '*' : 'http://localhost:5173',
-  methods: ['GET', 'POST'],
-  credentials: true,
-};
-
-// Use type casting to unknown first to satisfy TypeScript
-server.app.use(cors(corsOptions) as unknown as Middleware);
-server.app.use(express.json() as unknown as Middleware);
+const PORT = Number(process.env.PORT) || 8000;
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
   const frontEndAppBuildPath = path.resolve(__dirname, '../dist');
-  server.app.use(express.static(frontEndAppBuildPath) as unknown as Middleware);
+  server.app.use(require('koa-static')(frontEndAppBuildPath));
 }
-
-const PORT = Number(process.env.PORT) || 8000;
 
 server.run(PORT, () => {
   console.log(`Server running on port ${PORT}`);
