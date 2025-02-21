@@ -8,6 +8,8 @@ export interface GameState {
     gameStarted?: boolean;
     currentTurn?: string;
     isPlaying?: boolean;
+    playerID: string | null;
+    credentials?: string;
 }
 
 interface GameContextType {
@@ -21,7 +23,8 @@ const defaultGameState: GameState = {
     hostId: undefined,
     gameStarted: false,
     currentTurn: undefined,
-    isPlaying: false
+    isPlaying: false,
+    playerID: null
 };
 
 const GameContext = createContext<GameContextType | undefined>(undefined);

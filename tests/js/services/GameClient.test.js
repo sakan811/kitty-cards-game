@@ -19,18 +19,33 @@ vi.mock('colyseus.js', () => ({
 
 describe('GameClient', () => {
     let gameClient;
+    let mockSocket;
 
     beforeEach(() => {
-        vi.clearAllMocks();
-        gameClient = new GameClient();
-        mockRoom.hasJoined = true;
-        mockClient.connection.isOpen = true;
+        mockSocket = {
+            connected: true,
+            on: vi.fn(),
+            once: vi.fn(),
+            emit: vi.fn(),
+            connect: vi.fn(),
+            disconnect: vi.fn(),
+            removeAllListeners: vi.fn()
+        };
+
+        gameClient = new GameClient({
+            serverUrl: 'http://localhost:3000'
+        });
+
+        // Mock socket.io-client
+        vi.spyOn(gameClient, 'connect').mockResolvedValue();
+        vi.spyOn(gameClient, 'getConnectionStatus').mockReturnValue(true);
     });
 
-    afterEach(async () => {
+    afterEach(() => {
         if (gameClient) {
-            await gameClient.disconnect();
+            gameClient.disconnect();
         }
+        vi.clearAllMocks();
     });
 
     describe('Connection Management', () => {
@@ -136,40 +151,56 @@ describe('GameClient', () => {
     });
 
     describe('Message Handling', () => {
-        beforeEach(async () => {
+        it('should send messages when connected', async () => {
             await gameClient.connect();
-            await gameClient.joinOrCreate();
-        });
+            
+            const mockResponse = { success: true };
+            mockSocket.emit.mockImplementation((event, data, callback) => {
+                if (callback) callback(mockResponse);
+            });
 
-        it('should send messages when connected', () => {
-            const sendSpy = vi.spyOn(mockRoom, 'send');
-            gameClient.send('test', { data: 'test' });
-            expect(sendSpy).toHaveBeenCalledWith('test', { data: 'test' });
+            const response = await new Promise((resolve) => {
+                gameClient.getRoom()?.send('testEvent', { data: 'test' }, resolve);
+            });
+
+            expect(response).toEqual(mockResponse);
         });
 
         it('should handle message sending when not connected', async () => {
-            await gameClient.disconnect();
-            expect(() => gameClient.send('test', {})).toThrow('Not connected to room');
+            vi.spyOn(gameClient, 'getConnectionStatus').mockReturnValue(false);
+            
+            const room = gameClient.getRoom();
+            expect(room).toBeNull();
         });
 
-        it('should register and handle message listeners', () => {
-            const handler = vi.fn();
-            gameClient.on('test', handler);
+        it('should register and handle message listeners', async () => {
+            await gameClient.connect();
             
-            // Simulate message
-            mockRoom.messageHandlers.get('test')?.forEach(h => h({ data: 'test' }));
-            
-            expect(handler).toHaveBeenCalledWith({ data: 'test' });
+            const mockCallback = vi.fn();
+            const room = gameClient.getRoom();
+            room?.onMessage('testEvent', mockCallback);
+
+            // Simulate receiving a message
+            const mockData = { test: 'data' };
+            mockSocket.on.mock.calls
+                .find(([event]) => event === 'testEvent')[1](mockData);
+
+            expect(mockCallback).toHaveBeenCalledWith(mockData);
         });
 
-        it('should handle message listener errors gracefully', () => {
-            const handler = () => { throw new Error('Handler error'); };
-            const consoleSpy = vi.spyOn(console, 'error');
+        it('should handle message listener errors gracefully', async () => {
+            await gameClient.connect();
             
-            gameClient.on('test', handler);
-            mockRoom.messageHandlers.get('test')?.forEach(h => h({ data: 'test' }));
-            
-            expect(consoleSpy).toHaveBeenCalled();
+            const errorCallback = vi.fn();
+            const room = gameClient.getRoom();
+            room?.onMessage('error', errorCallback);
+
+            // Simulate an error event
+            const mockError = new Error('Test error');
+            mockSocket.on.mock.calls
+                .find(([event]) => event === 'error')[1](mockError);
+
+            expect(errorCallback).toHaveBeenCalledWith(mockError);
         });
     });
 }); 

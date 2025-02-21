@@ -1,12 +1,16 @@
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react-swc';
+import react from '@vitejs/plugin-react';
 import path from 'path';
 import tsconfigPaths from 'vite-tsconfig-paths';
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
 export default defineConfig({
     plugins: [
         react(),
-        tsconfigPaths()
+        tsconfigPaths(),
+        nodePolyfills({
+            include: ['events']
+        })
     ],
     root: 'src',
     base: '/',
@@ -38,17 +42,16 @@ export default defineConfig({
             }
         },
         sourcemap: true,
-        target: 'esnext'
+        target: 'esnext',
+        commonjsOptions: {
+            include: [/events/],
+        },
     },
     server: {
         port: 5173,
         proxy: {
             '/socket.io': {
-                target: 'ws://localhost:3000',
-                ws: true
-            },
-            '/colyseus': {
-                target: 'ws://localhost:3000',
+                target: 'ws://localhost:8000',
                 ws: true
             }
         },
@@ -59,11 +62,17 @@ export default defineConfig({
     resolve: {
         alias: {
             '@': path.resolve(__dirname, './src'),
-            'assets': path.resolve(__dirname, './src/assets')
+            'assets': path.resolve(__dirname, './src/assets'),
+            events: 'events',
         },
         extensions: ['.ts', '.tsx', '.js', '.jsx', '.json', '.mjs']
     },
     optimizeDeps: {
-        include: ['react', 'react-dom', 'react-router-dom', 'phaser', 'colyseus.js']
+        include: ['react', 'react-dom', 'react-router-dom', 'events'],
+        esbuildOptions: {
+            define: {
+                global: 'globalThis'
+            }
+        }
     }
 }); 
