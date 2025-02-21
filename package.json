@@ -5,17 +5,17 @@
         "start": "node dist/server/server.js",
         "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
         "dev:client": "vite",
-        "dev:server": "cross-env NODE_ENV=development nodemon --exec ts-node src/server/server.ts",
+        "dev:server": "cross-env NODE_ENV=development tsx watch src/server/server.ts",
         "build": "tsc && vite build",
-        "build:server": "tsc -p tsconfig.server.json",
+        "build:server": "tsc -p tsconfig.server.json && echo {\\\"type\\\":\\\"commonjs\\\"} > dist/server/package.json",
         "test": "vitest",
-        "server": "ts-node src/server/server.ts",
         "preview": "vite preview"
     },
     "dependencies": {
         "boardgame.io": "^0.50.2",
         "cors": "^2.8.5",
         "express": "^4.18.3",
+        "koa-static": "^5.0.0",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
         "react-router-dom": "^6.22.2"
@@ -38,6 +38,7 @@
         "postcss": "^8.4.35",
         "tailwindcss": "^3.4.1",
         "ts-node": "^10.9.2",
+        "ts-node-dev": "^2.0.0",
         "tsx": "^4.19.3",
         "typescript": "^5.3.3",
         "vite": "^5.1.4",
