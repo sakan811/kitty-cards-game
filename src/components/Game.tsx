@@ -84,45 +84,49 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves }) => {
     );
   };
 
-  const playerHand = G.hands[ctx.currentPlayer] || {};
-
-  return (
-    <div className="game-board">
-      <div className="game-info">
-        <div>Phase: {G.currentPhase}</div>
-        <div>Player {ctx.currentPlayer}'s Turn</div>
-        <div>Score: {G.scores[ctx.currentPlayer] || 0}</div>
-      </div>
-
-      <div className="player-hand">
-        <h3>Your Hand</h3>
-        <div className="cards">
-          <div 
-            className={`hand-slot assist ${G.currentPhase === 'drawAssist' ? 'active' : ''}`}
-            onClick={() => G.currentPhase === 'drawAssist' && moves.drawAssistCard()}
-          >
-            {playerHand.assist ? (
-              renderCard(playerHand.assist)
-            ) : (
-              <img src={assistCardBack} alt="Draw assist card" />
-            )}
-          </div>
-          <div 
-            className={`hand-slot number ${G.currentPhase === 'drawNumber' ? 'active' : ''}`}
-            onClick={() => G.currentPhase === 'drawNumber' && moves.drawNumberCard()}
-          >
-            {playerHand.number ? (
-              renderCard(playerHand.number)
-            ) : (
-              <img src={numberCardBack} alt="Draw number card" />
-            )}
+  const renderPlayerHand = (playerId: string, isOpponent: boolean = false) => {
+    const playerHand = G.hands[playerId] || {};
+    const isCurrentPlayer = playerId === ctx.currentPlayer;
+    
+    return (
+      <div className={`player-area ${isOpponent ? 'opponent' : 'current-player'}`}>
+        <div className="player-info">
+          <div className="player-name">Player {playerId}</div>
+          <div className="player-score">Score: {G.scores[playerId] || 0}</div>
+          {isCurrentPlayer && <div className="current-phase">Phase: {G.currentPhase}</div>}
+        </div>
+        <div className="player-hand">
+          <div className="cards">
+            <div 
+              className={`hand-slot assist ${isCurrentPlayer && G.currentPhase === 'drawAssist' ? 'active' : ''}`}
+              onClick={() => isCurrentPlayer && G.currentPhase === 'drawAssist' && moves.drawAssistCard()}
+            >
+              {playerHand.assist && renderCard(playerHand.assist)}
+            </div>
+            <div 
+              className={`hand-slot number ${isCurrentPlayer && G.currentPhase === 'drawNumber' ? 'active' : ''}`}
+              onClick={() => isCurrentPlayer && G.currentPhase === 'drawNumber' && moves.drawNumberCard()}
+            >
+              {playerHand.number && renderCard(playerHand.number)}
+            </div>
           </div>
         </div>
       </div>
+    );
+  };
 
+  // Get opponent's ID
+  const opponentId = ctx.playOrder.find(id => id !== ctx.currentPlayer);
+
+  return (
+    <div className="game-board">
+      {opponentId && renderPlayerHand(opponentId, true)}
+      
       <div className="game-tiles">
         {G.tiles.map(renderTile)}
       </div>
+
+      {renderPlayerHand(ctx.currentPlayer)}
 
       {G.winner && (
         <div className="winner-overlay">
