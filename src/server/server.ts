@@ -4,6 +4,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import koaStatic from 'koa-static';
+import cors from '@koa/cors';
+import type { Context, Next } from 'koa';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -20,6 +22,25 @@ const server = new Server({
 });
 
 const PORT = Number(process.env.PORT) || 8000;
+
+// Add CORS middleware
+server.app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? 'https://yourgame.com' 
+    : '*',
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+}));
+
+// Add health check endpoint
+server.app.use(async (ctx: Context, next: Next) => {
+  if (ctx.path === '/health') {
+    ctx.status = 200;
+    ctx.body = { status: 'ok' };
+    return;
+  }
+  await next();
+});
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
