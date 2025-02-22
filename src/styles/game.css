@@ -3,12 +3,16 @@
   max-width: 800px;
   margin: 0 auto;
   padding: 20px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .game-board {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  flex: 1;
 }
 
 .game-info {
@@ -16,6 +20,9 @@
   padding: 15px;
   border-radius: 8px;
   color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .decks {
@@ -56,50 +63,154 @@
 
 .cards {
   display: flex;
-  gap: 15px;
+  gap: 20px;
+  justify-content: center;
   margin-top: 10px;
 }
 
-.card {
-  background: #4a5568;
-  padding: 10px;
-  border-radius: 4px;
-  min-width: 100px;
-  text-align: center;
+.hand-slot {
+  width: 120px;
+  height: 180px;
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  transition: transform 0.2s;
 }
+
+.hand-slot.active {
+  transform: translateY(-5px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.hand-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.card-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: #4a5568;
+  color: white;
+  font-size: 1.5em;
+}
+
+.card-content.number-card {
+  position: relative;
+}
+
+.card-value {
+  font-size: 2em;
+  font-weight: bold;
+  z-index: 1;
+}
+
+.card-color {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0.3;
+}
+
+.card-color.brown { background: #8B4513; }
+.card-color.green { background: #48bb78; }
+.card-color.purple { background: #9f7aea; }
+.card-color.red { background: #f56565; }
+.card-color.white { background: #ffffff; }
 
 .game-tiles {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
   margin: 20px auto;
-  max-width: 500px;
+  max-width: 600px;
+  aspect-ratio: 1;
 }
 
 .tile {
-  background: #4a5568;
-  padding: 15px;
+  position: relative;
   border-radius: 8px;
-  color: white;
-  text-align: center;
+  overflow: hidden;
   cursor: pointer;
   aspect-ratio: 1;
+}
+
+.cup-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.cup-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.card-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 80%;
+  height: 80%;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 8px;
   display: flex;
-  flex-direction: column;
   justify-content: center;
   align-items: center;
-  gap: 10px;
+  color: white;
 }
 
-.tile.middle-tile {
+.middle-tile {
   background: #2d3748;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
-.brown-cup { border: 2px solid #8B4513; }
-.green-cup { border: 2px solid #48bb78; }
-.purple-cup { border: 2px solid #9f7aea; }
-.red-cup { border: 2px solid #f56565; }
-.white-cup { border: 2px solid #ffffff; }
+.decks-container {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 10px;
+}
+
+.deck-stack {
+  position: relative;
+  width: 80px;
+  height: 120px;
+}
+
+.deck-stack img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 5px;
+}
+
+.deck-stack span {
+  position: absolute;
+  bottom: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #4a5568;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.8em;
+}
 
 .winner-overlay {
   position: fixed;
@@ -107,7 +218,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(0, 0, 0, 0.9);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -116,21 +227,33 @@
   z-index: 1000;
 }
 
+.winner-overlay h2 {
+  font-size: 2.5em;
+  margin-bottom: 20px;
+}
+
 @media (max-width: 640px) {
   .game-container {
     padding: 10px;
   }
   
-  .decks {
+  .game-info {
     flex-direction: column;
+    gap: 10px;
+    text-align: center;
   }
   
   .game-tiles {
     gap: 5px;
   }
   
-  .tile {
-    padding: 10px;
-    font-size: 0.9em;
+  .hand-slot {
+    width: 100px;
+    height: 150px;
+  }
+  
+  .deck-stack {
+    width: 60px;
+    height: 90px;
   }
 } 
