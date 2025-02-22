@@ -1,0 +1,136 @@
+.game-container {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.game-board {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.game-info {
+  background: #2d3748;
+  padding: 15px;
+  border-radius: 8px;
+  color: white;
+}
+
+.decks {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+}
+
+.deck {
+  background: #4a5568;
+  padding: 15px;
+  border-radius: 8px;
+  color: white;
+  text-align: center;
+}
+
+.deck button {
+  background: #48bb78;
+  color: white;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.deck button:disabled {
+  background: #718096;
+  cursor: not-allowed;
+}
+
+.player-hand {
+  background: #2d3748;
+  padding: 15px;
+  border-radius: 8px;
+  color: white;
+}
+
+.cards {
+  display: flex;
+  gap: 15px;
+  margin-top: 10px;
+}
+
+.card {
+  background: #4a5568;
+  padding: 10px;
+  border-radius: 4px;
+  min-width: 100px;
+  text-align: center;
+}
+
+.game-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 20px auto;
+  max-width: 500px;
+}
+
+.tile {
+  background: #4a5568;
+  padding: 15px;
+  border-radius: 8px;
+  color: white;
+  text-align: center;
+  cursor: pointer;
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+}
+
+.tile.middle-tile {
+  background: #2d3748;
+}
+
+.brown-cup { border: 2px solid #8B4513; }
+.green-cup { border: 2px solid #48bb78; }
+.purple-cup { border: 2px solid #9f7aea; }
+.red-cup { border: 2px solid #f56565; }
+.white-cup { border: 2px solid #ffffff; }
+
+.winner-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: white;
+  z-index: 1000;
+}
+
+@media (max-width: 640px) {
+  .game-container {
+    padding: 10px;
+  }
+  
+  .decks {
+    flex-direction: column;
+  }
+  
+  .game-tiles {
+    gap: 5px;
+  }
+  
+  .tile {
+    padding: 10px;
+    font-size: 0.9em;
+  }
+} 
