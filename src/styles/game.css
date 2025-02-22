@@ -13,52 +13,49 @@
   flex-direction: column;
   gap: 20px;
   flex: 1;
+  justify-content: space-between;
 }
 
-.game-info {
+.player-area {
   background: #2d3748;
   padding: 15px;
   border-radius: 8px;
   color: white;
+}
+
+.player-area.opponent {
+  transform: rotate(180deg);
+}
+
+.player-area.opponent .card-content,
+.player-area.opponent .player-info {
+  transform: rotate(180deg);
+}
+
+.player-info {
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-
-.decks {
-  display: flex;
-  gap: 20px;
-  justify-content: center;
-}
-
-.deck {
-  background: #4a5568;
-  padding: 15px;
-  border-radius: 8px;
-  color: white;
-  text-align: center;
-}
-
-.deck button {
-  background: #48bb78;
-  color: white;
-  padding: 8px 16px;
-  border: none;
-  border-radius: 4px;
   margin-bottom: 10px;
-  cursor: pointer;
+  padding: 0 10px;
 }
 
-.deck button:disabled {
-  background: #718096;
-  cursor: not-allowed;
+.player-name {
+  font-weight: bold;
+}
+
+.player-score {
+  color: #48bb78;
+}
+
+.current-phase {
+  color: #f6e05e;
 }
 
 .player-hand {
-  background: #2d3748;
-  padding: 15px;
+  background: #4a5568;
+  padding: 10px;
   border-radius: 8px;
-  color: white;
 }
 
 .cards {
@@ -72,21 +69,53 @@
   width: 120px;
   height: 180px;
   border-radius: 10px;
-  overflow: hidden;
+  border: 2px dashed #718096;
   position: relative;
   cursor: pointer;
   transition: transform 0.2s;
+  background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.hand-slot::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 40px;
+  border: 2px dashed #718096;
+  border-radius: 50%;
+  opacity: 0.5;
 }
 
 .hand-slot.active {
+  border-color: #48bb78;
   transform: translateY(-5px);
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 5px 15px rgba(72, 187, 120, 0.3);
 }
 
-.hand-slot img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.hand-slot.active::before {
+  border-color: #48bb78;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.2);
+    opacity: 0.3;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.5;
+  }
 }
 
 .card-content {
@@ -99,6 +128,7 @@
   background: #4a5568;
   color: white;
   font-size: 1.5em;
+  border-radius: 8px;
 }
 
 .card-content.number-card {
@@ -118,6 +148,7 @@
   right: 0;
   bottom: 0;
   opacity: 0.3;
+  border-radius: 8px;
 }
 
 .card-color.brown { background: #8B4513; }
@@ -237,9 +268,9 @@
     padding: 10px;
   }
   
-  .game-info {
+  .player-info {
     flex-direction: column;
-    gap: 10px;
+    gap: 5px;
     text-align: center;
   }
   
