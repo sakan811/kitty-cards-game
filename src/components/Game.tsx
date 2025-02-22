@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Client } from 'boardgame.io/react';
 import { SocketIO } from 'boardgame.io/multiplayer';
 import { useGame } from '../context/GameContext';
-import { NoKittyCardsGame, NoKittyCardsState, Card, Tile } from '../js/game/NoKittyCardsGame';
+import { NoKittyCardsGame, NoKittyCardsState, Card, Tile, GamePhase } from '../js/game/NoKittyCardsGame';
 import { BoardProps } from 'boardgame.io/react';
 import '../styles/game.css';
 
@@ -16,9 +16,11 @@ import cupPurple from '../assets/images/cups/cup-purple.jpg';
 import cupRed from '../assets/images/cups/cup-red.jpg';
 import cupWhite from '../assets/images/cups/cup-white.jpg';
 
-interface GameBoardProps extends BoardProps<NoKittyCardsState> {}
+interface GameBoardProps extends BoardProps<NoKittyCardsState> {
+  playerID: string;
+}
 
-const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves }) => {
+const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }) => {
   const getCupImage = (color: string) => {
     switch (color) {
       case 'brown': return cupBrown;
@@ -84,6 +86,40 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves }) => {
     );
   };
 
+  const renderTurnIndicator = () => {
+    const isYourTurn = ctx.currentPlayer === playerID;
+    const hasPlacedCard = G.currentPhase === 'placeCard' && G.hands[ctx.currentPlayer]?.number === undefined;
+
+    return (
+      <div className={`turn-indicator ${isYourTurn ? 'your-turn' : ''}`}>
+        {isYourTurn ? "Your Turn" : `Player ${ctx.currentPlayer}'s Turn`}
+        <div className="turn-phase">
+          {isYourTurn && (
+            <div className="phase-steps">
+              <div className={`step ${G.currentPhase === 'drawAssist' ? 'active' : 'completed'}`}>
+                1. Draw Assist Card
+              </div>
+              <div className={`step ${G.currentPhase === 'drawNumber' ? 'active' : (G.currentPhase === 'placeCard' || hasPlacedCard) ? 'completed' : ''}`}>
+                2. Draw Number Card
+              </div>
+              <div className={`step ${G.currentPhase === 'placeCard' && !hasPlacedCard ? 'active' : hasPlacedCard ? 'completed' : ''}`}>
+                3. Place Card
+              </div>
+              {hasPlacedCard && (
+                <button 
+                  className="end-turn-button"
+                  onClick={() => events?.endTurn?.()}
+                >
+                  End Turn
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderPlayerHand = (playerId: string, isOpponent: boolean = false) => {
     const playerHand = G.hands[playerId] || {};
     const isCurrentPlayer = playerId === ctx.currentPlayer;
@@ -93,7 +129,6 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves }) => {
         <div className="player-info">
           <div className="player-name">Player {playerId}</div>
           <div className="player-score">Score: {G.scores[playerId] || 0}</div>
-          {isCurrentPlayer && <div className="current-phase">Phase: {G.currentPhase}</div>}
         </div>
         <div className="player-hand">
           <div className="cards">
@@ -115,12 +150,13 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves }) => {
     );
   };
 
-  // Get opponent's ID
-  const opponentId = ctx.playOrder.find(id => id !== ctx.currentPlayer);
+  // Get opponent's ID (if current player is 1, opponent is 2 and vice versa)
+  const opponentId = ctx.currentPlayer === '1' ? '2' : '1';
 
   return (
     <div className="game-board">
-      {opponentId && renderPlayerHand(opponentId, true)}
+      {renderTurnIndicator()}
+      {renderPlayerHand(opponentId, true)}
       
       <div className="game-tiles">
         {G.tiles.map(renderTile)}
@@ -141,8 +177,9 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves }) => {
 // Create the client as a React component
 const KittyCardsClientComponent = Client<NoKittyCardsState>({
   game: NoKittyCardsGame,
-  board: GameBoard,
+  board: GameBoard as any, // Type assertion needed due to playerID handling
   debug: process.env.NODE_ENV === 'development',
+  numPlayers: 2,
   multiplayer: SocketIO({ 
     server: process.env.NODE_ENV === 'production' 
       ? window.location.origin

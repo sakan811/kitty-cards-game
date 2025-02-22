@@ -113,18 +113,25 @@ interface MoveContext {
 
 export const NoKittyCardsGame: Game<NoKittyCardsState> = {
   name: 'no-kitty-cards-game',
-  setup: (ctx: Ctx): NoKittyCardsState => ({
+  
+  setup: ({ ctx }) => ({
     assistDeck: shuffleArray(createDeck('assist')),
     numberDeck: shuffleArray(createDeck('number')),
     tiles: setupTiles(),
-    hands: {},
-    scores: {},
+    hands: {
+      '1': {},
+      '2': {}
+    },
+    scores: {
+      '1': 0,
+      '2': 0
+    },
     winner: null,
     currentPhase: 'drawAssist'
   }),
 
   moves: {
-    drawAssistCard: ({ G, ctx, events }: MoveContext) => {
+    drawAssistCard: ({ G, ctx }: MoveContext) => {
       if (G.currentPhase !== 'drawAssist' || !G.assistDeck.length) return;
 
       const card = G.assistDeck.pop();
@@ -137,7 +144,7 @@ export const NoKittyCardsGame: Game<NoKittyCardsState> = {
       G.currentPhase = 'drawNumber';
     },
 
-    drawNumberCard: ({ G, ctx, events }: MoveContext) => {
+    drawNumberCard: ({ G, ctx }: MoveContext) => {
       if (G.currentPhase !== 'drawNumber' || !G.numberDeck.length) return;
 
       const card = G.numberDeck.pop();
@@ -150,14 +157,14 @@ export const NoKittyCardsGame: Game<NoKittyCardsState> = {
       G.currentPhase = 'placeCard';
     },
 
-    placeCard: ({ G, ctx, events }: MoveContext, tilePosition: number) => {
+    placeCard: ({ G, ctx }: MoveContext, tilePosition: number) => {
       if (G.currentPhase !== 'placeCard') return;
       
       const hand = G.hands[ctx.currentPlayer];
       if (!hand?.number) return;
 
       const tile = G.tiles[tilePosition];
-      if (!tile || tile.card) return;
+      if (!tile || tile.card || tilePosition === MIDDLE_TILE) return;
 
       // Place the card and calculate score
       const numberCard = hand.number;
@@ -179,15 +186,16 @@ export const NoKittyCardsGame: Game<NoKittyCardsState> = {
 
       // Reset phase for next turn
       G.currentPhase = 'drawAssist';
-
-      // End turn
-      events.endTurn();
     }
   },
 
   turn: {
     minMoves: 1,
-    maxMoves: 1,
+    maxMoves: 3, // Allow up to 3 moves per turn (draw assist, draw number, place card)
+    order: {
+      first: () => '1',
+      next: () => '2'
+    }
   },
 
   endIf: ({ G, ctx }: { G: NoKittyCardsState; ctx: Ctx }) => {

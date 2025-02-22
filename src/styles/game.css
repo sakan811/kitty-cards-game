@@ -16,6 +16,114 @@
   justify-content: space-between;
 }
 
+.turn-indicator {
+  background: #2d3748;
+  padding: 15px;
+  border-radius: 8px;
+  color: white;
+  text-align: center;
+  font-size: 1.2em;
+}
+
+.turn-indicator.your-turn {
+  background: #48bb78;
+  animation: pulse-green 2s infinite;
+}
+
+@keyframes pulse-green {
+  0% {
+    box-shadow: 0 0 0 0 rgba(72, 187, 120, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(72, 187, 120, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(72, 187, 120, 0);
+  }
+}
+
+.turn-phase {
+  margin-top: 10px;
+}
+
+.phase-steps {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.step {
+  padding: 8px 15px;
+  border-radius: 20px;
+  background: #4a5568;
+  font-size: 0.9em;
+  opacity: 0.7;
+  position: relative;
+}
+
+.step::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: -15px;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 2px;
+  background: #4a5568;
+}
+
+.step:last-child::before {
+  display: none;
+}
+
+.step.active {
+  background: #48bb78;
+  opacity: 1;
+  animation: pulse-step 1s infinite;
+}
+
+.step.completed {
+  background: #718096;
+  opacity: 0.8;
+}
+
+.step.completed::after {
+  content: '✓';
+  margin-left: 5px;
+  color: #48bb78;
+}
+
+@keyframes pulse-step {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.end-turn-button {
+  background: #f6e05e;
+  color: #2d3748;
+  padding: 8px 20px;
+  border: none;
+  border-radius: 20px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 10px;
+}
+
+.end-turn-button:hover {
+  background: #f6ad55;
+  transform: translateY(-2px);
+}
+
 .player-area {
   background: #2d3748;
   padding: 15px;
