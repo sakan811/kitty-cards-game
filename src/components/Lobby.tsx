@@ -39,7 +39,7 @@ const retryWithDelay = async (fn: () => Promise<any>, retries = MAX_RETRIES): Pr
   }
 };
 
-type ViewState = 'join' | 'create' | 'waiting';
+type ViewState = 'join' | 'waiting';
 
 const Lobby: React.FC = () => {
     const navigate = useNavigate();
@@ -51,6 +51,26 @@ const Lobby: React.FC = () => {
     const [players, setPlayers] = useState<Player[]>([]);
     const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
     const [isReady, setIsReady] = useState(false);
+    const [connectionError, setConnectionError] = useState(false);
+
+    // Add connection status check
+    useEffect(() => {
+        const checkServerConnection = async () => {
+            try {
+                await fetch('http://localhost:8000/health');
+                setConnectionError(false);
+            } catch (error) {
+                console.error('Server connection error:', error);
+                setConnectionError(true);
+                setError('Unable to connect to game server. Please try again later.');
+            }
+        };
+
+        checkServerConnection();
+        const interval = setInterval(checkServerConnection, 5000);
+
+        return () => clearInterval(interval);
+    }, []);
 
     // Poll for match updates when in waiting room
     useEffect(() => {
@@ -58,29 +78,63 @@ const Lobby: React.FC = () => {
             const fetchMatchStatus = async () => {
                 try {
                     const match = await lobbyClient.getMatch(GAME_NAME, gameState.roomCode!);
+                    setConnectionError(false);
                     if (match && match.players) {
                         const activePlayers = match.players
-                            .filter((p: MatchPlayer) => p.name) // Only include players that have joined
+                            .filter((p: MatchPlayer) => p.name)
                             .map((p: MatchPlayer) => ({
                                 id: p.id.toString(),
                                 name: p.name || `Player ${p.id + 1}`,
-                                isReady: p.data?.ready || false
+                                isReady: p.data?.ready || false,
+                                gameStarted: p.data?.gameStarted || false
                             }));
                         setPlayers(activePlayers);
                         
                         // Update local ready state
                         const currentPlayer = match.players.find((p: MatchPlayer) => p.id.toString() === gameState.playerID);
                         setIsReady(currentPlayer?.data?.ready || false);
+
+                        // Check if game has been started by host
+                        if (activePlayers.length === 2 && 
+                            activePlayers.every(p => p.isReady) && 
+                            activePlayers.some(p => p.gameStarted)) {
+                            setGameState(prev => ({
+                                ...prev,
+                                gameStarted: true,
+                                isPlaying: true
+                            }));
+                            navigate('/game');
+                        }
                     }
                 } catch (error) {
                     console.error('Error fetching match status:', error);
+                    setConnectionError(true);
+                    if (pollInterval) {
+                        clearInterval(pollInterval);
+                        setPollInterval(null);
+                    }
                 }
             };
 
-            // Initial fetch
-            fetchMatchStatus();
+            // Initial fetch with retry
+            const initFetch = async () => {
+                for (let i = 0; i < 3; i++) {
+                    try {
+                        await fetchMatchStatus();
+                        break;
+                    } catch (error) {
+                        if (i === 2) {
+                            setError('Failed to connect to game server. Please try again.');
+                            handleLeaveRoom();
+                        }
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                }
+            };
 
-            // Set up polling
+            initFetch();
+
+            // Set up polling with error handling
             const interval = setInterval(fetchMatchStatus, 2000);
             setPollInterval(interval);
 
@@ -88,7 +142,7 @@ const Lobby: React.FC = () => {
                 if (interval) clearInterval(interval);
             };
         }
-    }, [view, gameState.roomCode, gameState.playerID]);
+    }, [view, gameState.roomCode, gameState.playerID, navigate]);
 
     // Clean up polling on unmount
     useEffect(() => {
@@ -98,6 +152,11 @@ const Lobby: React.FC = () => {
     }, [pollInterval]);
 
     const handleCreateRoom = async () => {
+        if (connectionError) {
+            setError('Cannot create room: Server connection error');
+            return;
+        }
+
         try {
             setIsLoading(true);
             setError(null);
@@ -139,6 +198,7 @@ const Lobby: React.FC = () => {
         } catch (error) {
             console.error('Failed to create room:', error);
             setError('Failed to connect to game server. Please try again.');
+            setConnectionError(true);
         } finally {
             setIsLoading(false);
         }
@@ -229,18 +289,18 @@ const Lobby: React.FC = () => {
             setIsLoading(true);
             setError(null);
 
-            // Start the game
+            // Start the game for all players
             await lobbyClient.updatePlayer(
                 GAME_NAME,
                 gameState.roomCode,
                 {
                     playerID: gameState.playerID,
                     credentials: gameState.credentials,
-                    data: { ready: true }
+                    data: { ready: true, gameStarted: true }
                 }
             );
 
-            // Navigate to game
+            // Update local game state and navigate
             setGameState(prev => ({
                 ...prev,
                 gameStarted: true,
@@ -287,6 +347,12 @@ const Lobby: React.FC = () => {
         <div className="lobby-container">
             <h1 className="lobby-title">No Kitty Card Game</h1>
 
+            {connectionError && (
+                <div className="lobby-error bg-red-600">
+                    <span>Connection to game server lost. Attempting to reconnect...</span>
+                </div>
+            )}
+
             {error && (
                 <div className="lobby-error">
                     <span>{error}</span>
@@ -307,7 +373,8 @@ const Lobby: React.FC = () => {
                 <div className="lobby-menu">
                     <button 
                         className="lobby-button lobby-button-blue w-full mb-4"
-                        onClick={() => setView('create')}
+                        onClick={handleCreateRoom}
+                        disabled={isLoading || connectionError}
                     >
                         Create Room
                     </button>
@@ -322,26 +389,9 @@ const Lobby: React.FC = () => {
                         <button 
                             className="lobby-button lobby-button-green"
                             onClick={handleJoinRoom}
+                            disabled={isLoading || connectionError}
                         >
                             Join Room
-                        </button>
-                    </div>
-                </div>
-            ) : view === 'create' ? (
-                <div className="lobby-menu">
-                    <h2 className="text-xl mb-4">Create New Room</h2>
-                    <div className="flex flex-col gap-4">
-                        <button 
-                            className="lobby-button lobby-button-blue"
-                            onClick={handleCreateRoom}
-                        >
-                            Create Room
-                        </button>
-                        <button 
-                            className="lobby-button lobby-button-gray"
-                            onClick={() => setView('join')}
-                        >
-                            Back
                         </button>
                     </div>
                 </div>
