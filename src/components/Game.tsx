@@ -47,7 +47,13 @@ const KittyCardsClientComponent = Client<NoKittyCardsState>({
   multiplayer: SocketIO({ 
     server: process.env.NODE_ENV === 'production' 
       ? window.location.origin
-      : 'http://localhost:8000'
+      : 'http://localhost:8000',
+    socketOpts: {
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      transports: ['websocket'],
+    }
   }),
 });
 
