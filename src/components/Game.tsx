@@ -7,29 +7,79 @@ import { NoKittyCardsGame, NoKittyCardsState, Card, Tile } from '../js/game/NoKi
 import { BoardProps } from 'boardgame.io/react';
 import '../styles/game.css';
 
+// Import assets
+import assistCardBack from '../assets/images/cards/assist-card-back.jpg';
+import numberCardBack from '../assets/images/cards/number-card-back.jpg';
+import cupBrown from '../assets/images/cups/cup-brown.jpg';
+import cupGreen from '../assets/images/cups/cup-green.jpg';
+import cupPurple from '../assets/images/cups/cup-purple.jpg';
+import cupRed from '../assets/images/cups/cup-red.jpg';
+import cupWhite from '../assets/images/cups/cup-white.jpg';
+
 interface GameBoardProps extends BoardProps<NoKittyCardsState> {}
 
 const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves }) => {
+  const getCupImage = (color: string) => {
+    switch (color) {
+      case 'brown': return cupBrown;
+      case 'green': return cupGreen;
+      case 'purple': return cupPurple;
+      case 'red': return cupRed;
+      default: return cupWhite;
+    }
+  };
+
   const renderCard = (card?: Card) => {
-    if (!card) return 'Empty';
-    return `${card.type === 'number' ? `${card.value} ${card.color}` : 'Assist'}`;
+    if (!card) return null;
+    if (card.type === 'number') {
+      return (
+        <div className="card-content number-card">
+          <span className="card-value">{card.value}</span>
+          <div className={`card-color ${card.color}`} />
+        </div>
+      );
+    }
+    return <div className="card-content assist-card">Assist</div>;
   };
 
   const renderTile = (tile: Tile) => {
+    const isMiddle = tile.position === 4;
     return (
       <div 
         key={tile.position}
-        className={`tile ${tile.cupColor}-cup ${tile.position === 4 ? 'middle-tile' : ''}`}
+        className={`tile ${isMiddle ? 'middle-tile' : ''}`}
         onClick={() => {
-          if (G.currentPhase === 'placeCard' && tile.position !== 4) {
+          if (G.currentPhase === 'placeCard' && !isMiddle) {
             moves.placeCard(tile.position);
           }
         }}
       >
-        <div className="cup-color">{tile.cupColor}</div>
-        <div className="card-slot">
-          {tile.card ? renderCard(tile.card) : 'Empty'}
-        </div>
+        {!isMiddle && (
+          <div className="cup-container">
+            <img 
+              src={getCupImage(tile.cupColor)} 
+              alt={`${tile.cupColor} cup`} 
+              className="cup-image"
+            />
+            {tile.card && (
+              <div className="card-overlay">
+                {renderCard(tile.card)}
+              </div>
+            )}
+          </div>
+        )}
+        {isMiddle && (
+          <div className="decks-container">
+            <div className="deck-stack assist-deck">
+              <img src={assistCardBack} alt="Assist deck" />
+              <span>{G.assistDeck.length}</span>
+            </div>
+            <div className="deck-stack number-deck">
+              <img src={numberCardBack} alt="Number deck" />
+              <span>{G.numberDeck.length}</span>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -39,46 +89,34 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves }) => {
   return (
     <div className="game-board">
       <div className="game-info">
-        <div>Current Phase: {G.currentPhase}</div>
-        <div>Current Player: {ctx.currentPlayer}</div>
+        <div>Phase: {G.currentPhase}</div>
+        <div>Player {ctx.currentPlayer}'s Turn</div>
         <div>Score: {G.scores[ctx.currentPlayer] || 0}</div>
-      </div>
-
-      <div className="decks">
-        <div className="deck assist-deck">
-          <button 
-            onClick={() => moves.drawAssistCard()}
-            disabled={G.currentPhase !== 'drawAssist'}
-          >
-            Draw Assist Card
-          </button>
-          <div>Assist Cards: {G.assistDeck.length}</div>
-        </div>
-
-        <div className="deck number-deck">
-          <button 
-            onClick={() => moves.drawNumberCard()}
-            disabled={G.currentPhase !== 'drawNumber'}
-          >
-            Draw Number Card
-          </button>
-          <div>Number Cards: {G.numberDeck.length}</div>
-        </div>
       </div>
 
       <div className="player-hand">
         <h3>Your Hand</h3>
         <div className="cards">
-          {playerHand.assist && (
-            <div className="card assist-card">
-              Assist Card: {renderCard(playerHand.assist)}
-            </div>
-          )}
-          {playerHand.number && (
-            <div className="card number-card">
-              Number Card: {renderCard(playerHand.number)}
-            </div>
-          )}
+          <div 
+            className={`hand-slot assist ${G.currentPhase === 'drawAssist' ? 'active' : ''}`}
+            onClick={() => G.currentPhase === 'drawAssist' && moves.drawAssistCard()}
+          >
+            {playerHand.assist ? (
+              renderCard(playerHand.assist)
+            ) : (
+              <img src={assistCardBack} alt="Draw assist card" />
+            )}
+          </div>
+          <div 
+            className={`hand-slot number ${G.currentPhase === 'drawNumber' ? 'active' : ''}`}
+            onClick={() => G.currentPhase === 'drawNumber' && moves.drawNumberCard()}
+          >
+            {playerHand.number ? (
+              renderCard(playerHand.number)
+            ) : (
+              <img src={numberCardBack} alt="Draw number card" />
+            )}
+          </div>
         </div>
       </div>
 
