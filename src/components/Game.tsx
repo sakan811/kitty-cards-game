@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Client } from 'boardgame.io/react';
 import { SocketIO } from 'boardgame.io/multiplayer';
 import { useGame } from '../context/GameContext';
-import { NoKittyCardsGame, NoKittyCardsState, Card, Tile, CupColor } from '../js/game/NoKittyCardsGame';
+import { NoKittyCardsGame, NoKittyCardsState, Card, Tile } from '../js/game/NoKittyCardsGame';
 import { BoardProps } from 'boardgame.io/react';
 import '../styles/game.css';
 
