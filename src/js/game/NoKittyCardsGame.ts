@@ -1,4 +1,7 @@
-import { Game, Ctx } from 'boardgame.io';
+import { Game } from 'boardgame.io';
+import type { Ctx } from 'boardgame.io';
+
+const INVALID_MOVE = 'INVALID_MOVE';
 
 export type CupColor = 'brown' | 'green' | 'purple' | 'red' | 'white';
 export type CardType = 'assist' | 'number';
@@ -119,12 +122,12 @@ export const NoKittyCardsGame: Game<NoKittyCardsState> = {
     numberDeck: shuffleArray(createDeck('number')),
     tiles: setupTiles(),
     hands: {
-      '1': {},
-      '2': {}
+      '0': {},
+      '1': {}
     },
     scores: {
-      '1': 0,
-      '2': 0
+      '0': 0,
+      '1': 0
     },
     winner: null,
     currentPhase: 'drawAssist'
@@ -132,10 +135,10 @@ export const NoKittyCardsGame: Game<NoKittyCardsState> = {
 
   moves: {
     drawAssistCard: ({ G, ctx }: MoveContext) => {
-      if (G.currentPhase !== 'drawAssist' || !G.assistDeck.length) return;
+      if (G.currentPhase !== 'drawAssist' || !G.assistDeck.length) return INVALID_MOVE;
 
       const card = G.assistDeck.pop();
-      if (!card) return;
+      if (!card) return INVALID_MOVE;
 
       G.hands[ctx.currentPlayer] = {
         ...G.hands[ctx.currentPlayer] || {},
@@ -145,10 +148,10 @@ export const NoKittyCardsGame: Game<NoKittyCardsState> = {
     },
 
     drawNumberCard: ({ G, ctx }: MoveContext) => {
-      if (G.currentPhase !== 'drawNumber' || !G.numberDeck.length) return;
+      if (G.currentPhase !== 'drawNumber' || !G.numberDeck.length) return INVALID_MOVE;
 
       const card = G.numberDeck.pop();
-      if (!card) return;
+      if (!card) return INVALID_MOVE;
 
       G.hands[ctx.currentPlayer] = {
         ...G.hands[ctx.currentPlayer] || {},
@@ -158,13 +161,13 @@ export const NoKittyCardsGame: Game<NoKittyCardsState> = {
     },
 
     placeCard: ({ G, ctx }: MoveContext, tilePosition: number) => {
-      if (G.currentPhase !== 'placeCard') return;
+      if (G.currentPhase !== 'placeCard') return INVALID_MOVE;
       
       const hand = G.hands[ctx.currentPlayer];
-      if (!hand?.number) return;
+      if (!hand?.number) return INVALID_MOVE;
 
       const tile = G.tiles[tilePosition];
-      if (!tile || tile.card || tilePosition === MIDDLE_TILE) return;
+      if (!tile || tile.card || tilePosition === MIDDLE_TILE) return INVALID_MOVE;
 
       // Place the card and calculate score
       const numberCard = hand.number;
@@ -193,8 +196,8 @@ export const NoKittyCardsGame: Game<NoKittyCardsState> = {
     minMoves: 1,
     maxMoves: 3, // Allow up to 3 moves per turn (draw assist, draw number, place card)
     order: {
-      first: () => '1',
-      next: () => '2'
+      first: () => 0,
+      next: ({ ctx }) => (ctx.playOrderPos + 1) % ctx.numPlayers
     }
   },
 

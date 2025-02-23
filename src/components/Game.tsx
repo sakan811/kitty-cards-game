@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Client } from 'boardgame.io/react';
 import { SocketIO } from 'boardgame.io/multiplayer';
 import { useGame } from '../context/GameContext';
-import { NoKittyCardsGame, NoKittyCardsState, Card, Tile, GamePhase } from '../js/game/NoKittyCardsGame';
+import { NoKittyCardsGame, NoKittyCardsState, Card, Tile } from '../js/game/NoKittyCardsGame';
 import { BoardProps } from 'boardgame.io/react';
 import '../styles/game.css';
 
@@ -150,8 +150,8 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
     );
   };
 
-  // Get opponent's ID (if current player is 1, opponent is 2 and vice versa)
-  const opponentId = ctx.currentPlayer === '1' ? '2' : '1';
+  // Get opponent's ID (if current player is 0, opponent is 1 and vice versa)
+  const opponentId = ctx.currentPlayer === '0' ? '1' : '0';
 
   return (
     <div className="game-board">
@@ -167,7 +167,7 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
       {G.winner && (
         <div className="winner-overlay">
           <h2>Game Over!</h2>
-          <p>Winner: Player {G.winner}</p>
+          <p>Winner: Player {parseInt(G.winner) + 1}</p>
         </div>
       )}
     </div>

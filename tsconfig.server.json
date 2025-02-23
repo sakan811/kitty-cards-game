@@ -2,7 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "module": "ESNext",
-    "moduleResolution": "Node",
+    "moduleResolution": "NodeNext",
     "noEmit": false,
     "outDir": "dist/server",
     "target": "ES2020",
@@ -10,11 +10,12 @@
     "allowJs": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "allowSyntheticDefaultImports": true,
     "typeRoots": [
       "./node_modules/@types",
       "./src/types"
     ]
   },
-  "include": ["src/server/**/*", "src/types/**/*"],
+  "include": ["src/server/**/*", "src/types/**/*", "src/js/game/**/*"],
   "exclude": ["node_modules"]
 } 

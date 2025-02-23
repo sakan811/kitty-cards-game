@@ -423,7 +423,7 @@ const Lobby: React.FC = () => {
                                 <div key={playerNum} className="lobby-player-item">
                                     {player ? (
                                         <>
-                                            <span>{player.name}</span>
+                                            <span>Player {parseInt(player.id) + 1}</span>
                                             <div className="flex items-center gap-2">
                                                 <span className={`lobby-player-status ${player.isReady ? 'lobby-player-ready' : 'lobby-player-waiting'}`}>
                                                     {player.isReady ? 'Ready' : 'Not Ready'}
