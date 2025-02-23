@@ -32,6 +32,14 @@ server.app.use(cors({
   allowHeaders: ['Content-Type', 'Authorization'],
 }));
 
+// Add MIME type handling for CJS files
+server.app.use(async (ctx: Context, next: Next) => {
+  await next();
+  if (ctx.path.endsWith('.cjs')) {
+    ctx.type = 'application/javascript';
+  }
+});
+
 // Add health check endpoint
 server.app.use(async (ctx: Context, next: Next) => {
   if (ctx.path === '/health') {
