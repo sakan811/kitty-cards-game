@@ -194,7 +194,7 @@ export const NoKittyCardsGame: Game<NoKittyCardsState> = {
 
   turn: {
     minMoves: 1,
-    maxMoves: 3, // Allow up to 3 moves per turn (draw assist, draw number, place card)
+    maxMoves: 3,
     order: {
       first: () => 0,
       next: ({ ctx }) => (ctx.playOrderPos + 1) % ctx.numPlayers
@@ -210,8 +210,9 @@ export const NoKittyCardsGame: Game<NoKittyCardsState> = {
       const scores = Object.entries(G.scores);
       if (!scores.length) return;
 
-      const [winnerId, _highestScore] = scores.reduce<[string, number]>((highest, current) => 
-        current[1] > highest[1] ? current : highest
+      const [winnerId] = scores.reduce<[string, number]>(
+        (highest, current) => current[1] > highest[1] ? current : highest,
+        ['0', 0]
       );
 
       return { winner: winnerId };

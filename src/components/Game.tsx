@@ -123,26 +123,39 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
   const renderPlayerHand = (playerId: string, isOpponent: boolean = false) => {
     const playerHand = G.hands[playerId] || {};
     const isCurrentPlayer = playerId === ctx.currentPlayer;
+    const isYourHand = playerId === playerID;
     
     return (
       <div className={`player-area ${isOpponent ? 'opponent' : 'current-player'}`}>
         <div className="player-info">
-          <div className="player-name">Player {playerId}</div>
+          <div className="player-name">
+            {isYourHand ? 'You' : 'Opponent'} (Player {parseInt(playerId) + 1})
+          </div>
           <div className="player-score">Score: {G.scores[playerId] || 0}</div>
         </div>
         <div className="player-hand">
           <div className="cards">
             <div 
               className={`hand-slot assist ${isCurrentPlayer && G.currentPhase === 'drawAssist' ? 'active' : ''}`}
-              onClick={() => isCurrentPlayer && G.currentPhase === 'drawAssist' && moves.drawAssistCard()}
+              onClick={() => isYourHand && isCurrentPlayer && G.currentPhase === 'drawAssist' && moves.drawAssistCard()}
             >
-              {playerHand.assist && renderCard(playerHand.assist)}
+              {isYourHand && playerHand.assist && renderCard(playerHand.assist)}
+              {!isYourHand && playerHand.assist && (
+                <div className="card-back assist-back">
+                  <img src={assistCardBack} alt="Assist card back" />
+                </div>
+              )}
             </div>
             <div 
               className={`hand-slot number ${isCurrentPlayer && G.currentPhase === 'drawNumber' ? 'active' : ''}`}
-              onClick={() => isCurrentPlayer && G.currentPhase === 'drawNumber' && moves.drawNumberCard()}
+              onClick={() => isYourHand && isCurrentPlayer && G.currentPhase === 'drawNumber' && moves.drawNumberCard()}
             >
-              {playerHand.number && renderCard(playerHand.number)}
+              {isYourHand && playerHand.number && renderCard(playerHand.number)}
+              {!isYourHand && playerHand.number && (
+                <div className="card-back number-back">
+                  <img src={numberCardBack} alt="Number card back" />
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -150,8 +163,8 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
     );
   };
 
-  // Get opponent's ID (if current player is 0, opponent is 1 and vice versa)
-  const opponentId = ctx.currentPlayer === '0' ? '1' : '0';
+  // Get opponent's ID based on playOrder
+  const opponentId = ctx.playOrder.find(id => id !== playerID) || '1';
 
   return (
     <div className="game-board">
@@ -162,12 +175,15 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
         {G.tiles.map(renderTile)}
       </div>
 
-      {renderPlayerHand(ctx.currentPlayer)}
+      {renderPlayerHand(playerID)}
 
       {G.winner && (
         <div className="winner-overlay">
           <h2>Game Over!</h2>
-          <p>Winner: Player {parseInt(G.winner) + 1}</p>
+          <p>
+            {G.winner === playerID ? 'You Won!' : 'Opponent Won!'}
+            (Player {parseInt(G.winner) + 1})
+          </p>
         </div>
       )}
     </div>
