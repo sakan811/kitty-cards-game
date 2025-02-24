@@ -22,6 +22,6 @@
   "devDependencies": {
     "cross-env": "^7.0.3",
     "jsdom": "^26.0.0",
-    "vitest": "^3.0.5"
+    "vitest": "^3.0.7"
   }
 }
