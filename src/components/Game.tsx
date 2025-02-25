@@ -5,7 +5,7 @@ import { SocketIO } from 'boardgame.io/multiplayer';
 import { useGame } from '../context/GameContext';
 import { NoKittyCardsGame, NoKittyCardsState, Card, Tile } from '../js/game/NoKittyCardsGame';
 import { BoardProps } from 'boardgame.io/react';
-import '../styles/game.css';
+import '../styles/main.css';
 
 // Import assets
 import assistCardBack from '../assets/images/cards/assist-card-back.jpg';
@@ -21,6 +21,8 @@ interface GameBoardProps extends BoardProps<NoKittyCardsState> {
 }
 
 const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }) => {
+  const [selectedCardIndex, setSelectedCardIndex] = React.useState<number | null>(null);
+
   const getCupImage = (color: string) => {
     switch (color) {
       case 'brown': return cupBrown;
@@ -51,8 +53,9 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
         key={tile.position}
         className={`tile ${isMiddle ? 'middle-tile' : ''}`}
         onClick={() => {
-          if (G.currentPhase === 'placeCard' && !isMiddle) {
-            moves.placeCard(tile.position);
+          if (G.currentPhase === 'placeCard' && !isMiddle && selectedCardIndex !== null) {
+            moves.placeCard(tile.position, selectedCardIndex);
+            setSelectedCardIndex(null);
           }
         }}
       >
@@ -88,7 +91,7 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
 
   const renderTurnIndicator = () => {
     const isYourTurn = ctx.currentPlayer === playerID;
-    const hasPlacedCard = G.currentPhase === 'placeCard' && G.hands[ctx.currentPlayer]?.number === undefined;
+    const hasPlacedCard = G.currentPhase === 'placeCard' && G.hands[ctx.currentPlayer]?.cards.length === 0;
 
     return (
       <div className={`turn-indicator ${isYourTurn ? 'your-turn' : ''}`}>
@@ -121,7 +124,7 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
   };
 
   const renderPlayerHand = (playerId: string, isOpponent: boolean = false) => {
-    const playerHand = G.hands[playerId] || {};
+    const playerHand = G.hands[playerId] || { cards: [] };
     const isCurrentPlayer = playerId === ctx.currentPlayer;
     const isYourHand = playerId === playerID;
     
@@ -134,30 +137,78 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
           <div className="player-score">Score: {G.scores[playerId] || 0}</div>
         </div>
         <div className="player-hand">
-          <div className="cards">
-            <div 
-              className={`hand-slot assist ${isCurrentPlayer && G.currentPhase === 'drawAssist' ? 'active' : ''}`}
-              onClick={() => isYourHand && isCurrentPlayer && G.currentPhase === 'drawAssist' && moves.drawAssistCard()}
-            >
-              {isYourHand && playerHand.assist && renderCard(playerHand.assist)}
-              {!isYourHand && playerHand.assist && (
-                <div className="card-back assist-back">
-                  <img src={assistCardBack} alt="Assist card back" />
-                </div>
-              )}
-            </div>
-            <div 
-              className={`hand-slot number ${isCurrentPlayer && G.currentPhase === 'drawNumber' ? 'active' : ''}`}
-              onClick={() => isYourHand && isCurrentPlayer && G.currentPhase === 'drawNumber' && moves.drawNumberCard()}
-            >
-              {isYourHand && playerHand.number && renderCard(playerHand.number)}
-              {!isYourHand && playerHand.number && (
-                <div className="card-back number-back">
-                  <img src={numberCardBack} alt="Number card back" />
-                </div>
-              )}
+          <div className="cards-container">
+            {playerHand.cards.length === 0 && isCurrentPlayer && G.currentPhase === 'drawAssist' && (
+              <div 
+                className="hand-slot active empty-hand"
+                onClick={() => isYourHand && moves.drawAssistCard()}
+              >
+                Draw Assist Card
+              </div>
+            )}
+            {playerHand.cards.length === 1 && isCurrentPlayer && G.currentPhase === 'drawNumber' && (
+              <div 
+                className="hand-slot active empty-hand"
+                onClick={() => isYourHand && moves.drawNumberCard()}
+              >
+                Draw Number Card
+              </div>
+            )}
+            <div className="cards-fan">
+              {playerHand.cards.map((card, index) => {
+                const rotationAngle = playerHand.cards.length > 1 
+                  ? -15 + (30 / (playerHand.cards.length - 1)) * index 
+                  : 0;
+                const translateX = playerHand.cards.length > 1
+                  ? -50 + (100 / (playerHand.cards.length - 1)) * index
+                  : 0;
+                
+                return (
+                  <div 
+                    key={index}
+                    className={`card-in-hand ${card.type}`}
+                    style={{
+                      transform: `rotate(${rotationAngle}deg) translateX(${translateX}px)`,
+                      zIndex: index + 1
+                    }}
+                    onClick={() => {
+                      if (isYourHand && isCurrentPlayer && G.currentPhase === 'placeCard' && card.type === 'number') {
+                        // Set this card as the selected card for placement
+                        setSelectedCardIndex(index);
+                      }
+                    }}
+                  >
+                    {isYourHand ? (
+                      renderCard(card)
+                    ) : (
+                      <div className={`card-back ${card.type}-back`}>
+                        <img 
+                          src={card.type === 'assist' ? assistCardBack : numberCardBack} 
+                          alt={`${card.type} card back`} 
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
+          {isYourHand && isCurrentPlayer && G.currentPhase === 'drawAssist' && (
+            <button 
+              className="action-button"
+              onClick={() => moves.drawAssistCard()}
+            >
+              Draw Assist Card
+            </button>
+          )}
+          {isYourHand && isCurrentPlayer && G.currentPhase === 'drawNumber' && (
+            <button 
+              className="action-button"
+              onClick={() => moves.drawNumberCard()}
+            >
+              Draw Number Card
+            </button>
+          )}
         </div>
       </div>
     );

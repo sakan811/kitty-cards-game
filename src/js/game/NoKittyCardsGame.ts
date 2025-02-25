@@ -24,8 +24,7 @@ export interface NoKittyCardsState {
   tiles: Tile[];
   hands: {
     [key: string]: {
-      assist?: Card;
-      number?: Card;
+      cards: Card[];
     };
   };
   scores: {
@@ -122,8 +121,8 @@ export const NoKittyCardsGame: Game<NoKittyCardsState> = {
     numberDeck: shuffleArray(createDeck('number')),
     tiles: setupTiles(),
     hands: {
-      '0': {},
-      '1': {}
+      '0': { cards: [] },
+      '1': { cards: [] }
     },
     scores: {
       '0': 0,
@@ -140,9 +139,13 @@ export const NoKittyCardsGame: Game<NoKittyCardsState> = {
       const card = G.assistDeck.pop();
       if (!card) return INVALID_MOVE;
 
+      // Check if player already has 10 cards
+      const currentHand = G.hands[ctx.currentPlayer].cards || [];
+      if (currentHand.length >= 10) return INVALID_MOVE;
+
       G.hands[ctx.currentPlayer] = {
-        ...G.hands[ctx.currentPlayer] || {},
-        assist: card
+        ...G.hands[ctx.currentPlayer],
+        cards: [...currentHand, card]
       };
       G.currentPhase = 'drawNumber';
     },
@@ -153,24 +156,35 @@ export const NoKittyCardsGame: Game<NoKittyCardsState> = {
       const card = G.numberDeck.pop();
       if (!card) return INVALID_MOVE;
 
+      // Check if player already has 10 cards
+      const currentHand = G.hands[ctx.currentPlayer].cards || [];
+      if (currentHand.length >= 10) return INVALID_MOVE;
+
       G.hands[ctx.currentPlayer] = {
-        ...G.hands[ctx.currentPlayer] || {},
-        number: card
+        ...G.hands[ctx.currentPlayer],
+        cards: [...currentHand, card]
       };
       G.currentPhase = 'placeCard';
     },
 
-    placeCard: ({ G, ctx }: MoveContext, tilePosition: number) => {
+    placeCard: ({ G, ctx }: MoveContext, tilePosition: number, cardIndex: number) => {
       if (G.currentPhase !== 'placeCard') return INVALID_MOVE;
       
       const hand = G.hands[ctx.currentPlayer];
-      if (!hand?.number) return INVALID_MOVE;
+      if (!hand?.cards.length) return INVALID_MOVE;
+
+      // Validate card index
+      if (cardIndex < 0 || cardIndex >= hand.cards.length) return INVALID_MOVE;
 
       const tile = G.tiles[tilePosition];
       if (!tile || tile.card || tilePosition === MIDDLE_TILE) return INVALID_MOVE;
 
       // Place the card and calculate score
-      const numberCard = hand.number;
+      const numberCard = hand.cards[cardIndex];
+      
+      // Only number cards can be placed on tiles
+      if (numberCard.type !== 'number') return INVALID_MOVE;
+      
       tile.card = numberCard;
 
       // Calculate score for this move
@@ -184,8 +198,10 @@ export const NoKittyCardsGame: Game<NoKittyCardsState> = {
       // Update player's score
       G.scores[ctx.currentPlayer] = (G.scores[ctx.currentPlayer] || 0) + score;
 
-      // Clear the player's hand
-      G.hands[ctx.currentPlayer] = {};
+      // Remove the played card from the player's hand
+      G.hands[ctx.currentPlayer] = {
+        cards: hand.cards.filter((_, index) => index !== cardIndex)
+      };
 
       // Reset phase for next turn
       G.currentPhase = 'drawAssist';
