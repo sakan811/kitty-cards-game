@@ -202,9 +202,11 @@ const KittyCardsClientComponent = Client<NoKittyCardsState>({
       : 'http://localhost:8000',
     socketOpts: {
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 10,
       reconnectionDelay: 1000,
-      transports: ['websocket'],
+      timeout: 10000,
+      transports: ['websocket', 'polling'],
+      upgrade: true,
     }
   }),
 });
