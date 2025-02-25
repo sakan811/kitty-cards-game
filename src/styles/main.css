@@ -328,15 +328,19 @@
   }
 
   .lobby-copy-button {
-    @apply bg-gray-700 hover:bg-gray-600 p-2 rounded transition duration-200;
+    @apply bg-gray-700 hover:bg-gray-600 p-2 rounded transition duration-200 relative
+           after:content-['Copied!'] after:absolute after:top-full after:left-1/2 
+           after:-translate-x-1/2 after:mt-1 after:px-2 after:py-1 
+           after:bg-gray-800 after:text-white after:text-sm after:rounded
+           after:opacity-0 after:transition-opacity active:after:opacity-100;
   }
 
   .lobby-players-list {
-    @apply bg-gray-800 p-4 rounded-lg w-full;
+    @apply bg-gray-800 p-4 rounded-lg w-full max-w-md mx-auto;
   }
 
   .lobby-player-item {
-    @apply flex justify-between items-center p-4 bg-gray-800 rounded-lg mb-2;
+    @apply flex justify-between items-center p-4 bg-gray-800 rounded-lg mb-2 max-w-md;
   }
 
   .lobby-player-status {
