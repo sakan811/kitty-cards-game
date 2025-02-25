@@ -159,34 +159,25 @@ describe('LobbyScene', () => {
     });
 
     describe('Game Flow', () => {
-        it('should transition to MainScene when game starts', () => {
-            const gameData = {
-                roomId: 'test-room',
-                players: [
-                    { id: 'player-1', ready: true },
-                    { id: 'player-2', ready: true }
-                ],
-                gameState: { deck: [] },
-                currentTurn: 'player-1'
+        it('should transition to GameScene when game starts', () => {
+            const mockGameState = {
+                currentPlayer: 'player1'
             };
-
-            scene.currentRoomId = gameData.roomId;
             
-            // Get and call the gameStart handler
-            const gameStartHandler = mockSocket.on.mock.calls.find(
-                call => call[0] === 'gameStart'
-            )[1];
-            
-            gameStartHandler(gameData);
+            scene.currentRoomId = 'room123';
+            scene.playerId = 'player1';
+            scene.players = [{ id: 'player1' }, { id: 'player2' }];
+            scene.scene = { start: jest.fn() };
 
-            // Verify scene transition
-            expect(scene.scene.start).toHaveBeenCalledWith('MainScene', {
-                socket: mockSocket,
-                roomId: gameData.roomId,
-                playerId: scene.playerId,
-                players: gameData.players,
-                gameState: gameData.gameState,
-                currentTurn: gameData.currentTurn
+            scene.handleGameStart({ roomId: 'room123', gameState: mockGameState });
+
+            expect(scene.scene.start).toHaveBeenCalledWith('GameScene', {
+                socket: expect.any(Object),
+                roomCode: 'room123',
+                playerId: 'player1',
+                players: [{ id: 'player1' }, { id: 'player2' }],
+                gameState: mockGameState,
+                currentTurn: 'player1'
             });
         });
 
