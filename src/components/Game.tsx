@@ -92,7 +92,7 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
 
     return (
       <div className={`turn-indicator ${isYourTurn ? 'your-turn' : ''}`}>
-        {isYourTurn ? "Your Turn" : `Player ${ctx.currentPlayer}'s Turn`}
+        {isYourTurn ? "Your Turn" : `Player ${parseInt(ctx.currentPlayer) + 1}'s Turn`}
         <div className="turn-phase">
           {isYourTurn && (
             <div className="phase-steps">
