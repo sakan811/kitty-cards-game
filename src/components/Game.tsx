@@ -22,6 +22,17 @@ interface GameBoardProps extends BoardProps<NoKittyCardsState> {
 
 const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }) => {
   const [selectedCardIndex, setSelectedCardIndex] = React.useState<number | null>(null);
+  const [lastScoreEarned, setLastScoreEarned] = React.useState<{score: number, position: number} | null>(null);
+
+  // Add useEffect to clear the score feedback after a delay
+  React.useEffect(() => {
+    if (lastScoreEarned) {
+      const timer = setTimeout(() => {
+        setLastScoreEarned(null);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [lastScoreEarned]);
 
   const getCupImage = (color: string) => {
     switch (color) {
@@ -46,6 +57,19 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
     return <div className="card-content assist-card">Assist</div>;
   };
 
+  const calculateScore = (card: Card, cupColor: string): number => {
+    if (!card || card.type !== 'number') return 0;
+    
+    let score = Number(card.value);
+    if (cupColor === 'white') {
+      return score;
+    } else if (card.color === cupColor) {
+      return score * 2;
+    } else {
+      return 0;
+    }
+  };
+
   const renderTile = (tile: Tile) => {
     const isMiddle = tile.position === 4;
     return (
@@ -54,6 +78,11 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
         className={`tile ${isMiddle ? 'middle-tile' : ''}`}
         onClick={() => {
           if (G.currentPhase === 'placeCard' && !isMiddle && selectedCardIndex !== null) {
+            const selectedCard = G.hands[playerID].cards[selectedCardIndex];
+            if (selectedCard && selectedCard.type === 'number') {
+              const scoreEarned = calculateScore(selectedCard, tile.cupColor);
+              setLastScoreEarned({ score: scoreEarned, position: tile.position });
+            }
             moves.placeCard(tile.position, selectedCardIndex);
             setSelectedCardIndex(null);
           }
@@ -69,6 +98,11 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
             {tile.card && (
               <div className="card-overlay">
                 {renderCard(tile.card)}
+              </div>
+            )}
+            {lastScoreEarned && lastScoreEarned.position === tile.position && (
+              <div className="score-feedback">
+                {lastScoreEarned.score > 0 ? `+${lastScoreEarned.score}` : '0'}
               </div>
             )}
           </div>
@@ -225,7 +259,7 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
 
 // Create the client as a React component
 const KittyCardsClientComponent = Client<NoKittyCardsState>({
-  game: NoKittyCardsGame,
+  game: NoKittyCardsGame as any, // Type assertion to fix compatibility issue
   board: GameBoard as any, // Type assertion needed due to playerID handling
   debug: process.env.NODE_ENV === 'development',
   numPlayers: 2,

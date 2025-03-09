@@ -116,7 +116,7 @@ interface MoveContext {
 export const NoKittyCardsGame: Game<NoKittyCardsState> = {
   name: 'no-kitty-cards-game',
   
-  setup: ({ ctx }) => ({
+  setup: (context) => ({
     assistDeck: shuffleArray(createDeck('assist')),
     numberDeck: shuffleArray(createDeck('number')),
     tiles: setupTiles(),
@@ -189,10 +189,20 @@ export const NoKittyCardsGame: Game<NoKittyCardsState> = {
 
       // Calculate score for this move
       let score = Number(numberCard.value);
-      if (numberCard.color === tile.cupColor) {
-        score *= 2; // Double points for matching colors
-      } else if (tile.cupColor !== 'white' && numberCard.color !== tile.cupColor) {
-        score = 0; // Zero points for mismatched colors (except white cups)
+      
+      // Updated scoring logic:
+      // 1. If card is placed on white cup, score is the card value
+      // 2. If card color matches cup color, score is doubled
+      // 3. If card color doesn't match cup color (and cup is not white), score is 0
+      if (tile.cupColor === 'white') {
+        // Score remains as is for white cups
+        score = Number(numberCard.value);
+      } else if (numberCard.color === tile.cupColor) {
+        // Double points for matching colors
+        score = Number(numberCard.value) * 2;
+      } else {
+        // Zero points for mismatched colors
+        score = 0;
       }
 
       // Update player's score
