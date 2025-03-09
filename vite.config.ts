@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import tsconfigPaths from 'vite-tsconfig-paths';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
+import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
     plugins: [
@@ -10,7 +11,8 @@ export default defineConfig({
         tsconfigPaths(),
         nodePolyfills({
             include: ['events']
-        })
+        }),
+        tailwindcss()
     ],
     root: 'src',
     base: '/',
