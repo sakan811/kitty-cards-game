@@ -307,6 +307,9 @@
     color: #9ca3af; /* text-gray-400 */
     text-align: center;
     padding: 1.25rem; /* p-5 */
+    background-color: rgba(59, 130, 246, 0.05);
+    border: 2px dashed rgba(59, 130, 246, 0.3);
+    border-radius: 0.5rem;
   }
 
   .action-button {
@@ -331,8 +334,7 @@
     border-radius: 0.5rem; /* rounded-lg */
     border: 2px dashed #6b7280; /* border-dashed border-gray-500 */
     position: relative;
-    cursor: pointer;
-    transition: transform 0.2s;
+    transition: all 0.2s;
     background-color: rgba(0, 0, 0, 0.2); /* bg-black bg-opacity-20 */
     display: flex;
     justify-content: center;
@@ -463,6 +465,50 @@
     position: relative;
     width: 80px;
     height: 120px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .deck-stack.active-deck {
+    cursor: pointer;
+    box-shadow: 0 0 15px rgba(59, 130, 246, 0.7);
+    transform: translateY(-5px);
+  }
+
+  .deck-stack.active-deck:hover {
+    transform: translateY(-8px) scale(1.05);
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.9);
+  }
+
+  .deck-prompt {
+    position: absolute;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #3b82f6;
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    animation: pulse 1.5s infinite;
+    pointer-events: none;
+  }
+
+  .deck-prompt::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 5px;
+    border-style: solid;
+    border-color: #3b82f6 transparent transparent transparent;
+  }
+
+  @keyframes pulse {
+    0% { opacity: 0.7; }
+    50% { opacity: 1; }
+    100% { opacity: 0.7; }
   }
 
   .deck-stack img {
