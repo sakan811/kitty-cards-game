@@ -75,11 +75,25 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
         )}
         {isMiddle && (
           <div className="decks-container">
-            <div className="deck-stack assist-deck">
+            <div 
+              className={`deck-stack assist-deck ${G.currentPhase === 'drawAssist' && ctx.currentPlayer === playerID ? 'active' : ''}`}
+              onClick={() => {
+                if (G.currentPhase === 'drawAssist' && ctx.currentPlayer === playerID) {
+                  moves.drawAssistCard();
+                }
+              }}
+            >
               <img src={assistCardBack} alt="Assist deck" />
               <span>{G.assistDeck.length}</span>
             </div>
-            <div className="deck-stack number-deck">
+            <div 
+              className={`deck-stack number-deck ${G.currentPhase === 'drawNumber' && ctx.currentPlayer === playerID ? 'active' : ''}`}
+              onClick={() => {
+                if (G.currentPhase === 'drawNumber' && ctx.currentPlayer === playerID) {
+                  moves.drawNumberCard();
+                }
+              }}
+            >
               <img src={numberCardBack} alt="Number deck" />
               <span>{G.numberDeck.length}</span>
             </div>
@@ -138,22 +152,6 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
         </div>
         <div className="player-hand">
           <div className="cards-container">
-            {playerHand.cards.length === 0 && isCurrentPlayer && G.currentPhase === 'drawAssist' && (
-              <div 
-                className="hand-slot active empty-hand"
-                onClick={() => isYourHand && moves.drawAssistCard()}
-              >
-                Draw Assist Card
-              </div>
-            )}
-            {playerHand.cards.length === 1 && isCurrentPlayer && G.currentPhase === 'drawNumber' && (
-              <div 
-                className="hand-slot active empty-hand"
-                onClick={() => isYourHand && moves.drawNumberCard()}
-              >
-                Draw Number Card
-              </div>
-            )}
             <div className="cards-fan">
               {playerHand.cards.map((card, index) => {
                 const rotationAngle = playerHand.cards.length > 1 
@@ -193,22 +191,6 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
               })}
             </div>
           </div>
-          {isYourHand && isCurrentPlayer && G.currentPhase === 'drawAssist' && (
-            <button 
-              className="action-button"
-              onClick={() => moves.drawAssistCard()}
-            >
-              Draw Assist Card
-            </button>
-          )}
-          {isYourHand && isCurrentPlayer && G.currentPhase === 'drawNumber' && (
-            <button 
-              className="action-button"
-              onClick={() => moves.drawNumberCard()}
-            >
-              Draw Number Card
-            </button>
-          )}
         </div>
       </div>
     );
