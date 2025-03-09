@@ -47,7 +47,7 @@ const createDeck = (type: CardType): Card[] => {
     }));
   } else {
     // Create number cards deck with colors
-    const colors: CupColor[] = ['brown', 'green', 'purple', 'red', 'white'];
+    const colors: CupColor[] = ['brown', 'green', 'purple', 'red'];
     const numbers = Array(10).fill(0).map((_, i) => i + 1);
     const deck: Card[] = [];
     
