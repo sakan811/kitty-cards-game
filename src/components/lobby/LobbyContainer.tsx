@@ -98,9 +98,19 @@ export const LobbyContainer: React.FC = () => {
             );
             setIsReady(currentPlayer?.data?.ready || false);
 
-            if (activePlayers.length === 2 &&
-                activePlayers.every(p => p.isReady) &&
-                activePlayers.some(p => p.gameStarted)) {
+            // Check if any player has started the game and all players are ready
+            const gameHasStarted = activePlayers.some(p => p.gameStarted === true);
+            const allPlayersReady = activePlayers.length === 2 && activePlayers.every(p => p.isReady);
+            
+            console.log('Game status check:', { 
+              gameHasStarted, 
+              allPlayersReady, 
+              playerCount: activePlayers.length,
+              somePlayerStarted: activePlayers.some(p => p.gameStarted === true)
+            });
+            
+            if (allPlayersReady && gameHasStarted) {
+              console.log('Game has started! Navigating to game scene...');
               setGameState(prev => ({
                 ...prev,
                 gameStarted: true,
@@ -258,15 +268,22 @@ export const LobbyContainer: React.FC = () => {
     if (!gameState.roomCode || !gameState.playerID || !gameState.credentials) return;
 
     try {
+      console.log('Starting game as host...');
+      
       await lobbyClient.updatePlayer(
         GAME_NAME,
         gameState.roomCode,
         {
           playerID: gameState.playerID,
           credentials: gameState.credentials,
-          data: { gameStarted: true }
+          data: { 
+            ready: true,  // Ensure host is marked as ready
+            gameStarted: true 
+          }
         }
       );
+      
+      console.log('Game start signal sent to server');
       
       setGameState(prev => ({
         ...prev,
