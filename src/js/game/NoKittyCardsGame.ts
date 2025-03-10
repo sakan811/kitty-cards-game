@@ -1,5 +1,6 @@
 import { Game } from 'boardgame.io';
 import type { Ctx } from 'boardgame.io';
+import { calculateScore } from '../utils/scoreCalculator';
 
 const INVALID_MOVE = 'INVALID_MOVE';
 
@@ -187,23 +188,8 @@ export const NoKittyCardsGame: Game<NoKittyCardsState> = {
       
       tile.card = numberCard;
 
-      // Calculate score for this move
-      let score = Number(numberCard.value);
-      
-      // Updated scoring logic:
-      // 1. If card is placed on white cup, score is the card value
-      // 2. If card color matches cup color, score is doubled
-      // 3. If card color doesn't match cup color (and cup is not white), score is 0
-      if (tile.cupColor === 'white') {
-        // Score remains as is for white cups
-        score = Number(numberCard.value);
-      } else if (numberCard.color === tile.cupColor) {
-        // Double points for matching colors
-        score = Number(numberCard.value) * 2;
-      } else {
-        // Zero points for mismatched colors
-        score = 0;
-      }
+      // Calculate score using the centralized utility
+      const score = calculateScore(numberCard, tile);
 
       // Update player's score
       G.scores[ctx.currentPlayer] = (G.scores[ctx.currentPlayer] || 0) + score;

@@ -4,6 +4,7 @@ import { Client } from 'boardgame.io/react';
 import { SocketIO } from 'boardgame.io/multiplayer';
 import { useGame } from '../context/GameContext';
 import { NoKittyCardsGame, NoKittyCardsState, Card, Tile } from '../js/game/NoKittyCardsGame';
+import { calculateScore } from '../js/utils/scoreCalculator';
 import { BoardProps } from 'boardgame.io/react';
 import '../styles/main.css';
 
@@ -44,30 +45,23 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
     }
   };
 
-  const renderCard = (card?: Card) => {
+  const renderCard = (card?: Card, tile?: Tile) => {
     if (!card) return null;
     if (card.type === 'number') {
+      // Calculate the displayed value based on scoring rules
+      let displayValue = card.value;
+      if (tile) {
+        displayValue = calculateScore(card, tile);
+      }
+      
       return (
         <div className="card-content number-card">
-          <span className="card-value">{card.value}</span>
+          <span className="card-value">{displayValue}</span>
           <div className={`card-color ${card.color}`} />
         </div>
       );
     }
     return <div className="card-content assist-card">Assist</div>;
-  };
-
-  const calculateScore = (card: Card, cupColor: string): number => {
-    if (!card || card.type !== 'number') return 0;
-    
-    let score = Number(card.value);
-    if (cupColor === 'white') {
-      return score;
-    } else if (card.color === cupColor) {
-      return score * 2;
-    } else {
-      return 0;
-    }
   };
 
   const renderTile = (tile: Tile) => {
@@ -80,7 +74,9 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
           if (G.currentPhase === 'placeCard' && !isMiddle && selectedCardIndex !== null) {
             const selectedCard = G.hands[playerID].cards[selectedCardIndex];
             if (selectedCard && selectedCard.type === 'number') {
-              const scoreEarned = calculateScore(selectedCard, tile.cupColor);
+              // Calculate score using the centralized utility
+              const scoreEarned = calculateScore(selectedCard, tile);
+              
               setLastScoreEarned({ score: scoreEarned, position: tile.position });
             }
             moves.placeCard(tile.position, selectedCardIndex);
@@ -97,7 +93,7 @@ const GameBoard: React.FC<GameBoardProps> = ({ G, ctx, moves, events, playerID }
             />
             {tile.card && (
               <div className="card-overlay">
-                {renderCard(tile.card)}
+                {renderCard(tile.card, tile)}
               </div>
             )}
             {lastScoreEarned && lastScoreEarned.position === tile.position && (
