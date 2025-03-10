@@ -386,7 +386,7 @@
   }
 
   .card-color.purple {
-    background-color: #8b5cf6; /* bg-purple-500 */
+    background-color: #ec4899; /* Changed from #8b5cf6 (purple) to #ec4899 (pink) */
   }
 
   .card-color.red {
